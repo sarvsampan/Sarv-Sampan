@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import {
-  Search,
   Package,
   Truck,
   CheckCircle,
@@ -32,8 +31,6 @@ import { orderAPI } from '@/lib/userApi';
 export default function TrackOrderPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [orderNumber, setOrderNumber] = useState('');
-  const [email, setEmail] = useState('');
   const [orderData, setOrderData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -47,128 +44,24 @@ export default function TrackOrderPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [refundReason, setRefundReason] = useState('');
   const [replacementReason, setReplacementReason] = useState('');
+  const [refundImages, setRefundImages] = useState([]);
+  const [replacementImages, setReplacementImages] = useState([]);
 
-  // Auto-search if order parameter is present in URL
+  // Request status states
+  const [returnRequest, setReturnRequest] = useState(null);
+  const [replacementRequest, setReplacementRequest] = useState(null);
+
+  // Loading states for requests
+  const [refundLoading, setRefundLoading] = useState(false);
+  const [replacementLoading, setReplacementLoading] = useState(false);
+
+  // Auto-load order from URL parameter
   useEffect(() => {
     const orderParam = searchParams.get('order');
     if (orderParam) {
-      setOrderNumber(orderParam);
-      // Trigger search automatically
-      setTimeout(() => {
-        handleTrackOrderWithParam(orderParam);
-      }, 100);
+      handleTrackOrderWithParam(orderParam);
     }
   }, [searchParams]);
-
-  // Dummy order data for demonstration
-  const dummyOrders = {
-    'ORD12345678': {
-      orderNumber: 'ORD12345678',
-      orderDate: '2024-12-01',
-      estimatedDelivery: '2024-12-06',
-      currentStatus: 'in-transit',
-      product: {
-        id: '1',
-        name: 'Premium Wireless Bluetooth Headphones with Noise Cancellation',
-        image: null,
-        price: 3499,
-        quantity: 1,
-        sku: 'WH-1000XM4'
-      },
-      customer: {
-        name: 'John Doe',
-        email: 'john@example.com',
-        phone: '9876543210',
-        address: '123 Main Street, Apartment 4B, Mumbai, Maharashtra - 400001'
-      },
-      payment: {
-        method: 'Cash on Delivery',
-        status: 'Pending'
-      },
-      total: 3598,
-      trackingNumber: 'TRK987654321',
-      statusHistory: [
-        {
-          status: 'ordered',
-          title: 'Order Placed',
-          description: 'Your order has been placed successfully',
-          timestamp: '2024-12-01 10:30 AM',
-          completed: true
-        },
-        {
-          status: 'confirmed',
-          title: 'Order Confirmed',
-          description: 'Your order has been confirmed by the seller',
-          timestamp: '2024-12-01 02:15 PM',
-          completed: true
-        },
-        {
-          status: 'packed',
-          title: 'Packed',
-          description: 'Your item has been packed and ready to ship',
-          timestamp: '2024-12-02 11:00 AM',
-          completed: true
-        },
-        {
-          status: 'shipped',
-          title: 'Shipped',
-          description: 'Your order has been shipped',
-          timestamp: '2024-12-02 05:30 PM',
-          completed: true
-        },
-        {
-          status: 'in-transit',
-          title: 'In Transit',
-          description: 'Your order is on the way',
-          timestamp: '2024-12-03 09:00 AM',
-          completed: true,
-          current: true
-        },
-        {
-          status: 'out-for-delivery',
-          title: 'Out for Delivery',
-          description: 'Your order is out for delivery',
-          timestamp: null,
-          completed: false
-        },
-        {
-          status: 'delivered',
-          title: 'Delivered',
-          description: 'Order has been delivered',
-          timestamp: null,
-          completed: false
-        }
-      ]
-    }
-  };
-
-  const handleTrackOrder = async (e) => {
-    e.preventDefault();
-
-    if (!orderNumber.trim()) {
-      toast.error('Please enter order number');
-      return;
-    }
-
-    setLoading(true);
-    setSearched(true);
-
-    try {
-      const response = await orderAPI.getOrderByNumber(orderNumber.trim());
-
-      if (response.data) {
-        // Transform backend data to match UI format
-        const transformedOrder = transformOrderData(response.data);
-        setOrderData(transformedOrder);
-        toast.success('Order found!');
-      }
-    } catch (error) {
-      setOrderData(null);
-      toast.error('Order not found. Please check your order number.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleTrackOrderWithParam = async (orderNum) => {
     setLoading(true);
@@ -181,7 +74,9 @@ export default function TrackOrderPage() {
         // Transform backend data to match UI format
         const transformedOrder = transformOrderData(response.data);
         setOrderData(transformedOrder);
-        toast.success('Order found!');
+
+        // Fetch return/replacement requests
+        fetchRequestsStatus(transformedOrder.id);
       }
     } catch (error) {
       setOrderData(null);
@@ -191,21 +86,53 @@ export default function TrackOrderPage() {
     }
   };
 
+  // Fetch return/replacement request status
+  const fetchRequestsStatus = async (orderId) => {
+    try {
+      const userToken = localStorage.getItem('userToken');
+      if (!userToken) return;
+
+      const { returnAPI, replacementAPI } = await import('@/lib/userApi');
+
+      // Fetch all requests and filter by order_id
+      const [returnRes, replacementRes] = await Promise.all([
+        returnAPI.getMyReturnRequests().catch(() => ({ data: [] })),
+        replacementAPI.getMyReplacementRequests().catch(() => ({ data: [] }))
+      ]);
+
+      // Find request for this specific order
+      const returnReq = returnRes.data?.find(r => r.order_id === orderId);
+      const replacementReq = replacementRes.data?.find(r => r.order_id === orderId);
+
+      setReturnRequest(returnReq || null);
+      setReplacementRequest(replacementReq || null);
+    } catch (error) {
+      console.error('Error fetching requests:', error);
+    }
+  };
+
   // Transform backend order data to UI format
   const transformOrderData = (order) => {
+    // Calculate estimated delivery (3-5 business days from order date)
+    const orderDate = new Date(order.created_at);
+    const estimatedDate = new Date(orderDate);
+    estimatedDate.setDate(estimatedDate.getDate() + 5); // Add 5 days for delivery
+
     return {
+      id: order.id, // ✅ Added order ID
       orderNumber: order.order_number,
       orderDate: new Date(order.created_at).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }),
-      estimatedDelivery: order.delivered_at || 'To be determined',
+      estimatedDelivery: order.delivered_at || estimatedDate.toISOString(),
       currentStatus: order.status,
-      product: {
-        id: order.items[0]?.product_id || '',
-        name: order.items[0]?.product_name || 'Product',
-        image: order.items[0]?.product_image || null,
-        price: order.items[0]?.price || 0,
-        quantity: order.items[0]?.quantity || 1,
-        sku: order.items[0]?.product_slug || ''
-      },
+      items: (order.order_items || []).map(item => ({
+        id: item.product_id || '',
+        name: item.product_name || 'Product',
+        image: item.product_image || null,
+        price: item.price || 0,
+        quantity: item.quantity || 1,
+        slug: item.product_slug || '',
+        sku: item.product_slug || 'N/A'
+      })),
       customer: {
         name: order.shipping_address?.fullName || '',
         email: order.customer_email || order.shipping_address?.email || '',
@@ -216,7 +143,10 @@ export default function TrackOrderPage() {
         method: order.payment_method === 'cod' ? 'Cash on Delivery' : order.payment_method,
         status: order.payment_status === 'paid' ? 'Paid' : 'Pending'
       },
-      total: order.total_amount,
+      subtotal: order.subtotal || 0,
+      shipping: order.shipping_amount || order.shipping_cost || 0,
+      discount: order.discount_amount || 0,
+      total: order.total_amount || 0,
       trackingNumber: order.tracking_number || 'Not available',
       statusHistory: generateStatusHistory(order)
     };
@@ -224,6 +154,21 @@ export default function TrackOrderPage() {
 
   // Generate status history based on order status
   const generateStatusHistory = (order) => {
+    // If order is cancelled, show only cancelled status
+    if (order.status === 'cancelled') {
+      return [
+        {
+          status: 'cancelled',
+          title: 'Order Cancelled',
+          description: 'Your order has been cancelled',
+          timestamp: new Date(order.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+          completed: true,
+          current: true,
+          cancelled: true
+        }
+      ];
+    }
+
     const statuses = [
       { status: 'pending', title: 'Order Placed', description: 'Your order has been placed successfully' },
       { status: 'confirmed', title: 'Order Confirmed', description: 'Your order has been confirmed' },
@@ -242,11 +187,66 @@ export default function TrackOrderPage() {
     }));
   };
 
-  const getStatusIcon = (status, completed, current) => {
+  const getStatusIcon = (status, completed, current, cancelled) => {
+    if (cancelled) {
+      return <XCircle className="w-6 h-6 text-white" />;
+    }
     if (completed) {
       return <CheckCircle className="w-6 h-6 text-white" />;
     }
     return <div className="w-2 h-2 bg-slate-400 rounded-full"></div>;
+  };
+
+  // Handle image upload
+  const handleImageUpload = (e, type) => {
+    const files = Array.from(e.target.files);
+    const currentImages = type === 'refund' ? refundImages : replacementImages;
+
+    // Check if adding these files would exceed the limit
+    if (currentImages.length + files.length > 5) {
+      toast.error(`Maximum 5 images allowed. You can add ${5 - currentImages.length} more image(s).`);
+      return;
+    }
+
+    // Convert files to base64 for preview and upload
+    const imagePromises = files.map(file => {
+      return new Promise((resolve, reject) => {
+        // Check file size (max 5MB per image)
+        if (file.size > 5 * 1024 * 1024) {
+          reject(new Error('Image size should be less than 5MB'));
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(imagePromises).then(newImages => {
+      if (type === 'refund') {
+        setRefundImages([...currentImages, ...newImages]);
+      } else {
+        setReplacementImages([...currentImages, ...newImages]);
+      }
+      toast.success(`${newImages.length} image(s) added successfully`);
+    }).catch(error => {
+      toast.error(error.message || 'Error uploading images');
+      console.error('Image upload error:', error);
+    });
+
+    // Reset input value to allow selecting the same file again
+    e.target.value = '';
+  };
+
+  // Remove image from upload
+  const removeImage = (index, type) => {
+    if (type === 'refund') {
+      setRefundImages(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setReplacementImages(prev => prev.filter((_, i) => i !== index));
+    }
   };
 
   // Cancel Order Handler
@@ -277,33 +277,81 @@ export default function TrackOrderPage() {
   };
 
   // Refund Request Handler
-  const handleRefundRequest = () => {
+  const handleRefundRequest = async () => {
     if (!refundReason.trim()) {
       toast.error('Please provide a reason for refund request');
       return;
     }
 
-    // Simulate API call
-    setTimeout(() => {
+    // Check if replacement request already exists
+    if (replacementRequest) {
+      toast.error('Cannot request refund - replacement request already exists for this order');
+      return;
+    }
+
+    setRefundLoading(true);
+    try {
+      const { returnAPI } = await import('@/lib/userApi');
+
+      await returnAPI.createReturnRequest({
+        order_id: orderData.id,
+        order_number: orderData.orderNumber,
+        reason: refundReason.trim(),
+        images: refundImages
+      });
+
       toast.success('Refund request submitted successfully! We will review and process within 3-5 business days.');
       setShowRefundModal(false);
       setRefundReason('');
-    }, 1000);
+      setRefundImages([]);
+
+      // Reload request status
+      fetchRequestsStatus(orderData.id);
+    } catch (error) {
+      console.error('Error submitting refund request:', error);
+      toast.error(error?.message || 'Failed to submit refund request');
+    } finally {
+      setRefundLoading(false);
+    }
   };
 
   // Replacement Request Handler
-  const handleReplacementRequest = () => {
+  const handleReplacementRequest = async () => {
     if (!replacementReason.trim()) {
       toast.error('Please provide a reason for replacement request');
       return;
     }
 
-    // Simulate API call
-    setTimeout(() => {
+    // Check if return request already exists
+    if (returnRequest) {
+      toast.error('Cannot request replacement - refund request already exists for this order');
+      return;
+    }
+
+    setReplacementLoading(true);
+    try {
+      const { replacementAPI } = await import('@/lib/userApi');
+
+      await replacementAPI.createReplacementRequest({
+        order_id: orderData.id,
+        order_number: orderData.orderNumber,
+        reason: replacementReason.trim(),
+        images: replacementImages
+      });
+
       toast.success('Replacement request submitted successfully! Our team will contact you within 24 hours.');
       setShowReplacementModal(false);
       setReplacementReason('');
-    }, 1000);
+      setReplacementImages([]);
+
+      // Reload request status
+      fetchRequestsStatus(orderData.id);
+    } catch (error) {
+      console.error('Error submitting replacement request:', error);
+      toast.error(error?.message || 'Failed to submit replacement request');
+    } finally {
+      setReplacementLoading(false);
+    }
   };
 
   // Check if order can be cancelled
@@ -313,15 +361,55 @@ export default function TrackOrderPage() {
     return cancellableStatuses.includes(orderData.currentStatus);
   };
 
+  // Cancel Return Request
+  const handleCancelReturnRequest = async () => {
+    if (!returnRequest) return;
+
+    try {
+      const { returnAPI } = await import('@/lib/userApi');
+      await returnAPI.deleteReturnRequest(returnRequest.id);
+
+      toast.success('Refund request cancelled successfully');
+      setReturnRequest(null);
+    } catch (error) {
+      console.error('Error cancelling return request:', error);
+      toast.error('Failed to cancel refund request');
+    }
+  };
+
+  // Cancel Replacement Request
+  const handleCancelReplacementRequest = async () => {
+    if (!replacementRequest) return;
+
+    try {
+      const { replacementAPI } = await import('@/lib/userApi');
+      await replacementAPI.deleteReplacementRequest(replacementRequest.id);
+
+      toast.success('Replacement request cancelled successfully');
+      setReplacementRequest(null);
+    } catch (error) {
+      console.error('Error cancelling replacement request:', error);
+      toast.error('Failed to cancel replacement request');
+    }
+  };
+
   // Check if refund can be requested
   const canRequestRefund = () => {
     if (!orderData) return false;
+    // Don't show button if refund request already exists
+    if (returnRequest) return false;
+    // Don't show button if replacement request already exists
+    if (replacementRequest) return false;
     return orderData.currentStatus === 'delivered';
   };
 
   // Check if replacement can be requested
   const canRequestReplacement = () => {
     if (!orderData) return false;
+    // Don't show button if replacement request already exists
+    if (replacementRequest) return false;
+    // Don't show button if refund request already exists
+    if (returnRequest) return false;
     return orderData.currentStatus === 'delivered';
   };
 
@@ -333,66 +421,30 @@ export default function TrackOrderPage() {
         {/* Header */}
         <div className="mb-8">
           <Link
-            href="/"
+            href="/account/orders"
             className="text-blue-600 hover:text-blue-700 font-semibold flex items-center gap-2 text-sm mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>Back to Home</span>
+            <span>Back to My Orders</span>
           </Link>
           <h1 className="text-3xl md:text-4xl font-bold text-slate-900 mb-2">
-            Track Your Order
+            Order Details
           </h1>
           <p className="text-slate-600">
-            Enter your order details to track your shipment
+            View your order status and tracking information
           </p>
         </div>
 
-        {/* Search Form */}
-        <div className="max-w-2xl mx-auto mb-12">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-8">
-            <form onSubmit={handleTrackOrder} className="space-y-4">
-              <div>
-                <label className="block text-sm font-semibold text-slate-900 mb-2">
-                  Order Number *
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={orderNumber}
-                    onChange={(e) => setOrderNumber(e.target.value)}
-                    placeholder="e.g., ORD12345678"
-                    className="w-full px-4 py-3 pl-12 border-2 border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-lg"
-                  />
-                  <Package className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
-                </div>
-                <p className="text-xs text-slate-500 mt-2">
-                  You can find your order number in the confirmation email
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg font-bold text-lg hover:from-blue-700 hover:to-blue-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg"
-              >
-                {loading ? (
-                  <>
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
-                    <span>Searching...</span>
-                  </>
-                ) : (
-                  <>
-                    <Search className="w-5 h-5" />
-                    <span>Track Order</span>
-                  </>
-                )}
-              </button>
-            </form>
+        {/* Loading State */}
+        {loading && (
+          <div className="max-w-2xl mx-auto text-center py-20">
+            <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+            <p className="text-slate-600">Loading order details...</p>
           </div>
-        </div>
+        )}
 
         {/* Order Not Found */}
-        {searched && !orderData && !loading && (
+        {!loading && searched && !orderData && (
           <div className="max-w-2xl mx-auto">
             <div className="bg-white rounded-2xl border border-red-200 shadow-lg p-8 text-center">
               <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -400,18 +452,15 @@ export default function TrackOrderPage() {
               </div>
               <h2 className="text-2xl font-bold text-slate-900 mb-2">Order Not Found</h2>
               <p className="text-slate-600 mb-6">
-                We couldn't find an order with that number. Please check and try again.
+                We couldn't find this order. Please check your order number and try again.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <button
-                  onClick={() => {
-                    setOrderNumber('');
-                    setSearched(false);
-                  }}
+                <Link
+                  href="/account/orders"
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
                 >
-                  Try Again
-                </button>
+                  Go to My Orders
+                </Link>
                 <Link
                   href="/support"
                   className="px-6 py-2 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50"
@@ -446,11 +495,164 @@ export default function TrackOrderPage() {
               </div>
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Order Items */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6">
+                <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <Package className="w-5 h-5 text-blue-600" />
+                  Order Items ({orderData.items.length})
+                </h2>
+
+                <div className="space-y-4 mb-4">
+                  {orderData.items.map((item, index) => (
+                    <Link
+                      key={index}
+                      href={`/product/${item.slug}`}
+                      className="flex gap-4 pb-4 border-b border-slate-200 last:border-b-0 hover:bg-slate-50 rounded-lg p-2 -m-2 transition-colors cursor-pointer"
+                    >
+                      <div className="w-20 h-20 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">
+                        {item.image ? (
+                          <Image
+                            src={item.image}
+                            alt={item.name}
+                            width={80}
+                            height={80}
+                            className="object-cover w-full h-full"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ShoppingBag className="w-8 h-8 text-slate-400" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-slate-900 mb-1 line-clamp-2 hover:text-blue-600 transition-colors">
+                          {item.name}
+                        </h3>
+                        <p className="text-xs text-slate-500 mb-2">
+                          SKU: {item.sku}
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-slate-600">
+                            Qty: {item.quantity}
+                          </p>
+                          <p className="text-base font-bold text-blue-600">
+                            ₹{(item.price * item.quantity).toLocaleString('en-IN')}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+
+                {/* Order Summary */}
+                <div className="pt-4 border-t-2 border-slate-200 space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Subtotal</span>
+                    <span className="font-semibold text-slate-900">
+                      ₹{orderData.subtotal.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Shipping</span>
+                    <span className="font-semibold text-slate-900">
+                      {orderData.shipping === 0 ? (
+                        <span className="text-emerald-600">FREE</span>
+                      ) : (
+                        `₹${orderData.shipping.toLocaleString('en-IN')}`
+                      )}
+                    </span>
+                  </div>
+                  {orderData.discount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-600">Discount</span>
+                      <span className="font-semibold text-emerald-600">
+                        -₹{orderData.discount.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-base pt-2 border-t border-slate-200">
+                    <span className="font-bold text-slate-900">Total</span>
+                    <span className="font-bold text-blue-600 text-lg">
+                      ₹{orderData.total.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Payment Info */}
+                <div className="mt-4 pt-4 border-t-2 border-slate-200">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-slate-600">Payment Method</span>
+                    <span className="font-semibold text-slate-900">
+                      {orderData.payment.method}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">Payment Status</span>
+                    <span className="font-semibold text-orange-600">
+                      {orderData.payment.status}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Delivery Address */}
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6">
+                <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-blue-600" />
+                  Delivery Address
+                </h2>
+
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <User className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-slate-600 mb-1">Name</p>
+                      <p className="font-semibold text-slate-900">
+                        {orderData.customer.name}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <Phone className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-slate-600 mb-1">Phone</p>
+                      <p className="font-semibold text-slate-900">
+                        {orderData.customer.phone}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <Mail className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-slate-600 mb-1">Email</p>
+                      <p className="font-semibold text-slate-900">
+                        {orderData.customer.email}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <Home className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
+                    <div>
+                      <p className="text-xs text-slate-600 mb-1">Address</p>
+                      <p className="font-semibold text-slate-900">
+                        {orderData.customer.address}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Status Timeline */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-8">
               <h2 className="text-2xl font-bold text-slate-900 mb-8 flex items-center gap-2">
                 <Truck className="w-6 h-6 text-blue-600" />
-                Tracking Status
+                Order Tracking Status
               </h2>
 
               <div className="relative">
@@ -460,19 +662,21 @@ export default function TrackOrderPage() {
                     <div className="flex flex-col items-center">
                       <div
                         className={`w-12 h-12 rounded-full flex items-center justify-center z-10 ${
-                          item.completed
+                          item.cancelled
+                            ? 'bg-gradient-to-br from-red-500 to-red-600 shadow-lg'
+                            : item.completed
                             ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg'
                             : item.current
                             ? 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg animate-pulse'
                             : 'bg-slate-200'
                         }`}
                       >
-                        {getStatusIcon(item.status, item.completed, item.current)}
+                        {getStatusIcon(item.status, item.completed, item.current, item.cancelled)}
                       </div>
                       {index !== orderData.statusHistory.length - 1 && (
                         <div
                           className={`w-0.5 flex-1 mt-2 ${
-                            item.completed ? 'bg-emerald-500' : 'bg-slate-200'
+                            item.cancelled ? 'bg-red-500' : item.completed ? 'bg-emerald-500' : 'bg-slate-200'
                           }`}
                           style={{ minHeight: '40px' }}
                         ></div>
@@ -483,7 +687,9 @@ export default function TrackOrderPage() {
                     <div className="flex-1 pb-4">
                       <div
                         className={`${
-                          item.current
+                          item.cancelled
+                            ? 'bg-red-50 border-2 border-red-500'
+                            : item.current
                             ? 'bg-blue-50 border-2 border-blue-500'
                             : item.completed
                             ? 'bg-emerald-50 border-2 border-emerald-200'
@@ -564,115 +770,84 @@ export default function TrackOrderPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Product Details */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6">
-                <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+            {/* Return/Replacement Request Status */}
+            {(returnRequest || replacementRequest) && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl border-2 border-blue-200 shadow-lg p-6">
+                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
                   <Package className="w-5 h-5 text-blue-600" />
-                  Product Details
-                </h2>
-
-                <div className="flex gap-4">
-                  <div className="w-24 h-24 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">
-                    {orderData.product.image ? (
-                      <Image
-                        src={orderData.product.image}
-                        alt={orderData.product.name}
-                        width={96}
-                        height={96}
-                        className="object-cover w-full h-full"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBag className="w-10 h-10 text-slate-400" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-slate-900 mb-2 line-clamp-2">
-                      {orderData.product.name}
-                    </h3>
-                    <p className="text-sm text-slate-600 mb-2">
-                      SKU: {orderData.product.sku}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-slate-600">
-                        Qty: {orderData.product.quantity}
-                      </p>
-                      <p className="text-lg font-bold text-blue-600">
-                        ₹{orderData.product.price.toLocaleString('en-IN')}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-4 pt-4 border-t border-slate-200">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-600">Payment Method</span>
-                    <span className="font-semibold text-slate-900">
-                      {orderData.payment.method}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-slate-600">Payment Status</span>
-                    <span className="font-semibold text-orange-600">
-                      {orderData.payment.status}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Delivery Address */}
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-lg p-6">
-                <h2 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-blue-600" />
-                  Delivery Address
-                </h2>
-
+                  Request Status
+                </h3>
                 <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <User className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-slate-600 mb-1">Name</p>
-                      <p className="font-semibold text-slate-900">
-                        {orderData.customer.name}
-                      </p>
+                  {returnRequest && (
+                    <div className="bg-white rounded-lg p-4 border border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-slate-900">Refund Request</p>
+                          <p className="text-xs text-slate-600 mt-1">
+                            Reason: {returnRequest.reason}
+                          </p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          returnRequest.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                          returnRequest.status === 'approved' ? 'bg-green-100 text-green-700' :
+                          returnRequest.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>
+                          {returnRequest.status.toUpperCase()}
+                        </span>
+                      </div>
+                      {returnRequest.admin_notes && (
+                        <p className="text-xs text-slate-600 mt-2 p-2 bg-slate-50 rounded">
+                          <strong>Admin Note:</strong> {returnRequest.admin_notes}
+                        </p>
+                      )}
+                      {returnRequest.status === 'pending' && (
+                        <button
+                          onClick={handleCancelReturnRequest}
+                          className="mt-3 w-full px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm font-semibold hover:bg-red-100 transition-colors"
+                        >
+                          Cancel Refund Request
+                        </button>
+                      )}
                     </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <Phone className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-slate-600 mb-1">Phone</p>
-                      <p className="font-semibold text-slate-900">
-                        {orderData.customer.phone}
-                      </p>
+                  )}
+                  {replacementRequest && (
+                    <div className="bg-white rounded-lg p-4 border border-blue-200">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-slate-900">Replacement Request</p>
+                          <p className="text-xs text-slate-600 mt-1">
+                            Reason: {replacementRequest.reason}
+                          </p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                          replacementRequest.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                          replacementRequest.status === 'approved' ? 'bg-green-100 text-green-700' :
+                          replacementRequest.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                          replacementRequest.status === 'shipped' ? 'bg-purple-100 text-purple-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>
+                          {replacementRequest.status.toUpperCase()}
+                        </span>
+                      </div>
+                      {replacementRequest.admin_notes && (
+                        <p className="text-xs text-slate-600 mt-2 p-2 bg-slate-50 rounded">
+                          <strong>Admin Note:</strong> {replacementRequest.admin_notes}
+                        </p>
+                      )}
+                      {replacementRequest.status === 'pending' && (
+                        <button
+                          onClick={handleCancelReplacementRequest}
+                          className="mt-3 w-full px-4 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm font-semibold hover:bg-red-100 transition-colors"
+                        >
+                          Cancel Replacement Request
+                        </button>
+                      )}
                     </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <Mail className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-slate-600 mb-1">Email</p>
-                      <p className="font-semibold text-slate-900">
-                        {orderData.customer.email}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-3">
-                    <Home className="w-5 h-5 text-slate-400 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <p className="text-xs text-slate-600 mb-1">Address</p>
-                      <p className="font-semibold text-slate-900">
-                        {orderData.customer.address}
-                      </p>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Order Actions */}
             {(canCancelOrder() || canRequestRefund() || canRequestReplacement()) && (
@@ -711,24 +886,6 @@ export default function TrackOrderPage() {
             )}
 
             {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <button
-                onClick={() => {
-                  setOrderData(null);
-                  setOrderNumber('');
-                  setSearched(false);
-                }}
-                className="px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-              >
-                Track Another Order
-              </button>
-              <Link
-                href="/support"
-                className="px-8 py-3 border-2 border-slate-300 text-slate-700 text-center rounded-lg font-semibold hover:bg-slate-50 transition-colors"
-              >
-                Need Help?
-              </Link>
-            </div>
           </div>
         )}
       </main>
@@ -737,7 +894,7 @@ export default function TrackOrderPage() {
 
       {/* Cancel Order Modal */}
       {showCancelModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 relative animate-fade-in">
             <button
               onClick={() => setShowCancelModal(false)}
@@ -805,8 +962,8 @@ export default function TrackOrderPage() {
 
       {/* Refund Request Modal */}
       {showRefundModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 relative animate-fade-in">
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 relative animate-fade-in my-8 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowRefundModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
@@ -846,6 +1003,58 @@ export default function TrackOrderPage() {
                 <option value="Other">Other</option>
               </select>
 
+              <label className="block text-sm font-semibold text-slate-900 mb-2 mt-4">
+                Upload Images (Optional) - {refundImages.length}/5
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => handleImageUpload(e, 'refund')}
+                  className="hidden"
+                  id="refund-image-upload"
+                  disabled={refundImages.length >= 5}
+                />
+                <label
+                  htmlFor="refund-image-upload"
+                  className={`w-full px-4 py-3 border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors ${
+                    refundImages.length >= 5
+                      ? 'border-slate-200 bg-slate-50 cursor-not-allowed'
+                      : 'border-orange-300 hover:border-orange-500 hover:bg-orange-50'
+                  }`}
+                >
+                  <Package className="w-8 h-8 text-orange-500 mb-2" />
+                  <span className="text-sm font-medium text-slate-700">
+                    {refundImages.length >= 5 ? 'Maximum images reached' : 'Click to select images'}
+                  </span>
+                  <span className="text-xs text-slate-500 mt-1">
+                    You can select multiple images at once (Ctrl/Cmd + Click)
+                  </span>
+                </label>
+              </div>
+              <p className="text-xs text-slate-500 mt-2 mb-3">PNG, JPG up to 5MB each. Maximum 5 images total.</p>
+
+              {refundImages.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {refundImages.map((image, index) => (
+                    <div key={index} className="relative aspect-square">
+                      <img
+                        src={image}
+                        alt={`Upload ${index + 1}`}
+                        className="w-full h-full object-cover rounded-lg border border-slate-200"
+                      />
+                      <button
+                        onClick={() => removeImage(index, 'refund')}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                 <p className="text-xs text-blue-800">
                   <strong>Refund Policy:</strong> Full refund will be issued after product inspection. Return shipping may apply.
@@ -856,15 +1065,24 @@ export default function TrackOrderPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowRefundModal(false)}
-                className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition-colors"
+                disabled={refundLoading}
+                className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRefundRequest}
-                className="flex-1 px-4 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors"
+                disabled={refundLoading}
+                className="flex-1 px-4 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Submit Request
+                {refundLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit Request'
+                )}
               </button>
             </div>
           </div>
@@ -873,8 +1091,8 @@ export default function TrackOrderPage() {
 
       {/* Replacement Request Modal */}
       {showReplacementModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 relative animate-fade-in">
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 relative animate-fade-in my-8 max-h-[90vh] overflow-y-auto">
             <button
               onClick={() => setShowReplacementModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
@@ -914,6 +1132,58 @@ export default function TrackOrderPage() {
                 <option value="Other">Other</option>
               </select>
 
+              <label className="block text-sm font-semibold text-slate-900 mb-2 mt-4">
+                Upload Images (Optional) - {replacementImages.length}/5
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(e) => handleImageUpload(e, 'replacement')}
+                  className="hidden"
+                  id="replacement-image-upload"
+                  disabled={replacementImages.length >= 5}
+                />
+                <label
+                  htmlFor="replacement-image-upload"
+                  className={`w-full px-4 py-3 border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors ${
+                    replacementImages.length >= 5
+                      ? 'border-slate-200 bg-slate-50 cursor-not-allowed'
+                      : 'border-blue-300 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  <Package className="w-8 h-8 text-blue-500 mb-2" />
+                  <span className="text-sm font-medium text-slate-700">
+                    {replacementImages.length >= 5 ? 'Maximum images reached' : 'Click to select images'}
+                  </span>
+                  <span className="text-xs text-slate-500 mt-1">
+                    You can select multiple images at once (Ctrl/Cmd + Click)
+                  </span>
+                </label>
+              </div>
+              <p className="text-xs text-slate-500 mt-2 mb-3">PNG, JPG up to 5MB each. Maximum 5 images total.</p>
+
+              {replacementImages.length > 0 && (
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {replacementImages.map((image, index) => (
+                    <div key={index} className="relative aspect-square">
+                      <img
+                        src={image}
+                        alt={`Upload ${index + 1}`}
+                        className="w-full h-full object-cover rounded-lg border border-slate-200"
+                      />
+                      <button
+                        onClick={() => removeImage(index, 'replacement')}
+                        className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3">
                 <p className="text-xs text-emerald-800">
                   <strong>Replacement Process:</strong> We'll arrange pickup of the defective item and deliver the replacement.
@@ -924,15 +1194,24 @@ export default function TrackOrderPage() {
             <div className="flex gap-3">
               <button
                 onClick={() => setShowReplacementModal(false)}
-                className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition-colors"
+                disabled={replacementLoading}
+                className="flex-1 px-4 py-3 border-2 border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleReplacementRequest}
-                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                disabled={replacementLoading}
+                className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                Submit Request
+                {replacementLoading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit Request'
+                )}
               </button>
             </div>
           </div>

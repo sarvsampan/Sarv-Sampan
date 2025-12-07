@@ -13,9 +13,7 @@ export default function Replacements() {
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedReplacement, setSelectedReplacement] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [showShipModal, setShowShipModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [trackingNumber, setTrackingNumber] = useState('');
 
   useEffect(() => {
     fetchReplacements();
@@ -62,36 +60,9 @@ export default function Replacements() {
 
       toast.success(`Replacement ${statusText} successfully`);
       setShowDetailsModal(false);
-      setShowShipModal(false);
       fetchReplacements();
     } catch (error) {
       toast.error(error.message || 'Failed to update replacement status');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const handleShipReplacement = async () => {
-    if (!trackingNumber.trim()) {
-      toast.error('Please enter tracking number');
-      return;
-    }
-
-    setActionLoading(true);
-    try {
-      await replacementAPI.updateStatus(selectedReplacement.id, {
-        status: 'shipped',
-        tracking_number: trackingNumber,
-        admin_notes: `Replacement shipped with tracking number: ${trackingNumber}`
-      });
-
-      toast.success('Replacement shipped successfully');
-      setShowShipModal(false);
-      setShowDetailsModal(false);
-      setTrackingNumber('');
-      fetchReplacements();
-    } catch (error) {
-      toast.error(error.message || 'Failed to ship replacement');
     } finally {
       setActionLoading(false);
     }
@@ -109,7 +80,7 @@ export default function Replacements() {
   };
 
   const filteredReplacements = replacements.filter((replacement) =>
-    replacement.replacement_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    replacement.order_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     replacement.order?.order_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     replacement.user?.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -221,16 +192,21 @@ export default function Replacements() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredReplacements.map((replacement) => (
+              {filteredReplacements.map((replacement) => {
+                const userName = replacement.user
+                  ? `${replacement.user.first_name || ''} ${replacement.user.last_name || ''}`.trim()
+                  : 'N/A';
+
+                return (
                 <tr key={replacement.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
-                    <span className="text-sm font-medium text-slate-900">{replacement.replacement_number}</span>
+                    <span className="text-sm font-medium text-slate-900">{replacement.order_number || 'N/A'}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-sm text-slate-900">#{replacement.order?.order_number || 'N/A'}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-sm text-slate-900">{replacement.user?.name || 'N/A'}</div>
+                    <div className="text-sm text-slate-900">{userName}</div>
                     <div className="text-xs text-slate-500">{replacement.user?.email || 'N/A'}</div>
                   </td>
                   <td className="px-4 py-3">
@@ -255,7 +231,8 @@ export default function Replacements() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -276,10 +253,10 @@ export default function Replacements() {
               <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">
-                    Replacement #{selectedReplacement.replacement_number}
+                    Replacement Request
                   </h2>
                   <p className="text-sm text-slate-500 mt-0.5">
-                    Order #{selectedReplacement.order?.order_number} • {format(new Date(selectedReplacement.created_at), 'MMM dd, yyyy • hh:mm a')}
+                    Order #{selectedReplacement.order?.order_number || selectedReplacement.order_number} • {format(new Date(selectedReplacement.created_at), 'MMM dd, yyyy • hh:mm a')}
                   </p>
                 </div>
                 <button
@@ -315,7 +292,9 @@ export default function Replacements() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-900 mb-3">Customer</h3>
-                  <p className="text-sm text-slate-900 font-medium">{selectedReplacement.user?.name}</p>
+                  <p className="text-sm text-slate-900 font-medium">
+                    {selectedReplacement.user ? `${selectedReplacement.user.first_name || ''} ${selectedReplacement.user.last_name || ''}`.trim() : 'N/A'}
+                  </p>
                   <p className="text-xs text-slate-500 mt-1">{selectedReplacement.user?.email}</p>
                 </div>
                 <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
@@ -332,6 +311,25 @@ export default function Replacements() {
                   <p className="text-sm text-slate-600 mt-2">{selectedReplacement.description}</p>
                 )}
               </div>
+
+              {/* Uploaded Images */}
+              {selectedReplacement.images && selectedReplacement.images.length > 0 && (
+                <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3">Uploaded Images</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    {selectedReplacement.images.map((image, index) => (
+                      <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200">
+                        <img
+                          src={image}
+                          alt={`Replacement image ${index + 1}`}
+                          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300 cursor-pointer"
+                          onClick={() => window.open(image, '_blank')}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Admin Notes */}
               {selectedReplacement.admin_notes && (
@@ -366,7 +364,7 @@ export default function Replacements() {
             {selectedReplacement.status === 'approved' && (
               <div className="px-6 py-4 bg-white border-t border-slate-200">
                 <button
-                  onClick={() => setShowShipModal(true)}
+                  onClick={() => handleUpdateStatus(selectedReplacement.id, 'shipped', 'Replacement marked as shipped')}
                   disabled={actionLoading}
                   className="w-full px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
@@ -387,54 +385,6 @@ export default function Replacements() {
                 </button>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* Ship Modal */}
-      {showShipModal && selectedReplacement && (
-        <div
-          className="fixed inset-0 bg-slate-900/40 flex items-center justify-center z-50 p-4"
-          onClick={() => setShowShipModal(false)}
-        >
-          <div
-            className="bg-white rounded-lg shadow-xl w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-white border-b border-slate-200 px-6 py-4">
-              <h2 className="text-lg font-bold text-slate-900">Ship Replacement</h2>
-              <p className="text-sm text-slate-500 mt-0.5">Enter tracking details for the replacement</p>
-            </div>
-            <div className="p-6">
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Tracking Number
-              </label>
-              <input
-                type="text"
-                value={trackingNumber}
-                onChange={(e) => setTrackingNumber(e.target.value)}
-                placeholder="Enter tracking number"
-                className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-            <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex gap-3">
-              <button
-                onClick={() => {
-                  setShowShipModal(false);
-                  setTrackingNumber('');
-                }}
-                className="flex-1 px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-semibold rounded-lg transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleShipReplacement}
-                disabled={actionLoading}
-                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors disabled:opacity-50"
-              >
-                {actionLoading ? 'Shipping...' : 'Ship Now'}
-              </button>
-            </div>
           </div>
         </div>
       )}

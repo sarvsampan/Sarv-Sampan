@@ -95,6 +95,13 @@ export class OrderService {
       throw new AppError('Invalid order status', 400);
     }
 
+    // Get current order to check payment method
+    const { data: currentOrder } = await supabase
+      .from('orders')
+      .select('tracking_number, payment_method')
+      .eq('id', orderId)
+      .single();
+
     // Build update object
     const updateData = {
       status,
@@ -106,17 +113,16 @@ export class OrderService {
       updateData.shipped_at = new Date().toISOString();
 
       // Auto-generate tracking number if not already exists
-      const { data: currentOrder } = await supabase
-        .from('orders')
-        .select('tracking_number')
-        .eq('id', orderId)
-        .single();
-
       if (!currentOrder?.tracking_number) {
         updateData.tracking_number = `TRK-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       }
     } else if (status === 'delivered') {
       updateData.delivered_at = new Date().toISOString();
+
+      // If COD order is delivered, mark payment as paid (payment collected)
+      if (currentOrder?.payment_method === 'cod') {
+        updateData.payment_status = 'paid';
+      }
     } else if (status === 'cancelled') {
       updateData.cancelled_at = new Date().toISOString();
     }

@@ -303,7 +303,9 @@ export default function Orders() {
                 <div className="space-y-2">
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
                     <span className="text-sm text-slate-600">Name</span>
-                    <span className="text-sm font-semibold text-slate-900">{selectedOrder.user?.name || 'N/A'}</span>
+                    <span className="text-sm font-semibold text-slate-900">
+                      {selectedOrder.user ? `${selectedOrder.user.first_name || ''} ${selectedOrder.user.last_name || ''}`.trim() || 'N/A' : selectedOrder.shipping_address?.fullName || 'N/A'}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center py-2 border-b border-slate-100">
                     <span className="text-sm text-slate-600">Email</span>

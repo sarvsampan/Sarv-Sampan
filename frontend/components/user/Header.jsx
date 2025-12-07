@@ -18,6 +18,7 @@ import {
   LogOut,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { cartAPI, wishlistAPI } from '@/lib/userApi';
 
 export default function Header({ showNavigation = false }) {
   const router = useRouter();
@@ -61,14 +62,33 @@ export default function Header({ showNavigation = false }) {
     };
   }, []);
 
-  const updateCounts = () => {
-    // Get cart items from localStorage
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    setCartCount(cart.length);
+  const updateCounts = async () => {
+    // Get cart count from database
+    try {
+      const cartResponse = await cartAPI.getCart();
+      if (cartResponse.success && cartResponse.data) {
+        setCartCount(cartResponse.data.count || 0);
+      }
+    } catch (error) {
+      // If error, set to 0
+      setCartCount(0);
+    }
 
-    // Get wishlist items from localStorage
-    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-    setWishlistCount(wishlist.length);
+    // Get wishlist count from database (only if logged in)
+    const token = localStorage.getItem('userToken');
+    if (token) {
+      try {
+        const wishlistResponse = await wishlistAPI.getWishlist();
+        if (wishlistResponse.success && wishlistResponse.data) {
+          setWishlistCount(wishlistResponse.data.count || 0);
+        }
+      } catch (error) {
+        // If error or not logged in, set to 0
+        setWishlistCount(0);
+      }
+    } else {
+      setWishlistCount(0);
+    }
   };
 
   const fetchCategories = async () => {
@@ -252,7 +272,7 @@ export default function Header({ showNavigation = false }) {
                           className="flex items-center gap-3 p-3 hover:bg-blue-50 cursor-pointer transition-colors border-b border-slate-100 last:border-0"
                         >
                           {/* Product Image */}
-                          <div className="w-12 h-12 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">
+                          <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">
                             {product.images && product.images.length > 0 ? (
                               <img
                                 src={product.images[0].image_url}
@@ -268,16 +288,26 @@ export default function Header({ showNavigation = false }) {
 
                           {/* Product Info */}
                           <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-semibold text-slate-900 truncate">
+                            <h4 className="text-sm font-semibold text-slate-900 truncate mb-1">
                               {product.name}
                             </h4>
+                            {product.category && (
+                              <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                {product.category.name}
+                              </span>
+                            )}
                             <div className="flex items-center gap-2 mt-1">
-                              <span className="text-sm font-bold text-blue-600">
+                              <span className="text-base font-bold text-blue-600">
                                 ₹{(product.sale_price || product.regular_price).toLocaleString('en-IN')}
                               </span>
                               {product.sale_price && (
                                 <span className="text-xs text-slate-400 line-through">
                                   ₹{product.regular_price.toLocaleString('en-IN')}
+                                </span>
+                              )}
+                              {product.sale_price && (
+                                <span className="text-xs font-semibold text-green-600">
+                                  {Math.round(((product.regular_price - product.sale_price) / product.regular_price) * 100)}% off
                                 </span>
                               )}
                             </div>
@@ -295,12 +325,18 @@ export default function Header({ showNavigation = false }) {
                           )}
                         </div>
                       ))}
-                      <div className="p-3 border-t border-slate-100 bg-slate-50">
+
+                      {/* View All Results Button */}
+                      <div className="p-2 bg-slate-50 border-t border-slate-200">
                         <button
-                          onClick={handleSearch}
-                          className="w-full text-center text-sm font-semibold text-blue-600 hover:text-blue-700 py-2"
+                          type="submit"
+                          onClick={() => {
+                            setShowSearchDropdown(false);
+                            router.push(`/products?search=${encodeURIComponent(searchQuery)}`);
+                          }}
+                          className="w-full py-2 text-sm font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
                         >
-                          View all results for "{searchQuery}"
+                          View All Results for "{searchQuery}"
                         </button>
                       </div>
                     </>

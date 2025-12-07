@@ -12,8 +12,8 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
-    email: '',
-    password: ''
+    email: 'sam@gmail.com',
+    password: '12345678'
   });
 
   const handleSubmit = async (e) => {
@@ -119,6 +119,17 @@ export default function Login() {
                 'Sign In'
               )}
             </button>
+
+            {/* Demo Credentials */}
+            <div className="mt-4 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+              <p className="text-xs font-semibold text-slate-900 mb-1">Demo Credentials</p>
+              <p className="text-xs text-slate-600">
+                <span className="font-medium">Email:</span> sam@gmail.com
+              </p>
+              <p className="text-xs text-slate-600">
+                <span className="font-medium">Password:</span> 12345678
+              </p>
+            </div>
           </form>
 
           {/* Divider */}

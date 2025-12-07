@@ -6,52 +6,38 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { ShoppingCart, Heart, Eye, Star, ShoppingBag } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { cartAPI, wishlistAPI } from '@/lib/userApi';
 
 export default function ProductCard({ product, viewMode = 'grid' }) {
   const router = useRouter();
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
 
   // Check if product is in wishlist on mount
   useEffect(() => {
-    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-    const isInWishlist = wishlist.some(item => item.id === product.id);
-    setIsWishlisted(isInWishlist);
+    checkWishlistStatus();
   }, [product.id]);
 
-  const handleAddToCart = (e) => {
-    e.preventDefault();
+  const checkWishlistStatus = async () => {
+    try {
+      const token = localStorage.getItem('userToken');
+      if (!token) {
+        setIsWishlisted(false);
+        return;
+      }
 
-    if (product.stock_quantity === 0) {
-      toast.error('Product is out of stock');
-      return;
+      const response = await wishlistAPI.checkWishlist(product.id);
+      if (response.success) {
+        setIsWishlisted(response.data.isInWishlist);
+      }
+    } catch (error) {
+      // If not logged in, wishlist is false
+      setIsWishlisted(false);
     }
-
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const existingItem = cart.find(item => item.id === product.id);
-
-    if (existingItem) {
-      toast.error('Item already in cart');
-      return;
-    }
-
-    const cartItem = {
-      id: product.id,
-      name: product.name,
-      slug: product.slug,
-      sku: product.sku,
-      price: product.sale_price || product.regular_price,
-      image: product.images && product.images.length > 0 ? product.images[0].image_url : null,
-      quantity: 1,
-    };
-
-    cart.push(cartItem);
-    localStorage.setItem('cart', JSON.stringify(cart));
-    window.dispatchEvent(new Event('cartUpdated'));
-    toast.success('Added to cart!');
   };
 
-  const handleBuyNow = (e) => {
+  const handleAddToCart = async (e) => {
     e.preventDefault();
 
     if (product.stock_quantity === 0) {
@@ -59,42 +45,81 @@ export default function ProductCard({ product, viewMode = 'grid' }) {
       return;
     }
 
-    handleAddToCart(e);
+    setIsAddingToCart(true);
+    try {
+      await cartAPI.addToCart(product.id, 1);
+      window.dispatchEvent(new CustomEvent('cartUpdated'));
+      toast.success('Added to cart!');
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      if (error?.message?.includes('already in cart')) {
+        toast.error('Item already in cart');
+      } else {
+        toast.error(error?.message || 'Failed to add to cart');
+      }
+    } finally {
+      setIsAddingToCart(false);
+    }
+  };
+
+  const handleBuyNow = async (e) => {
+    e.preventDefault();
+
+    if (product.stock_quantity === 0) {
+      toast.error('Product is out of stock');
+      return;
+    }
+
+    await handleAddToCart(e);
     setTimeout(() => {
       router.push('/checkout');
-    }, 300);
+    }, 500);
   };
 
-  const handleToggleWishlist = (e) => {
+  const handleToggleWishlist = async (e) => {
     e.preventDefault();
 
-    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-    const existingIndex = wishlist.findIndex(item => item.id === product.id);
-
-    if (existingIndex > -1) {
-      // Remove from wishlist
-      wishlist.splice(existingIndex, 1);
-      setIsWishlisted(false);
-      toast.success('Removed from wishlist');
-    } else {
-      // Add to wishlist
-      const wishlistItem = {
-        id: product.id,
-        name: product.name,
-        slug: product.slug,
-        sku: product.sku,
-        regular_price: product.regular_price,
-        sale_price: product.sale_price,
-        stock_quantity: product.stock_quantity,
-        image: product.images && product.images.length > 0 ? product.images[0].image_url : null,
-      };
-      wishlist.push(wishlistItem);
-      setIsWishlisted(true);
-      toast.success('Added to wishlist');
+    const token = localStorage.getItem('userToken');
+    if (!token) {
+      toast.error('Please login to add to wishlist');
+      router.push('/login');
+      return;
     }
 
-    localStorage.setItem('wishlist', JSON.stringify(wishlist));
-    window.dispatchEvent(new Event('wishlistUpdated'));
+    try {
+      if (isWishlisted) {
+        // Remove from wishlist - use product.wishlistItemId if available
+        const wishlistItemId = product.wishlistItemId;
+        if (wishlistItemId) {
+          await wishlistAPI.removeFromWishlist(wishlistItemId);
+        } else {
+          // Fallback: get wishlist and find item
+          const wishlistResponse = await wishlistAPI.getWishlist();
+          if (wishlistResponse.success) {
+            const item = wishlistResponse.data.items.find(i => i.product.id === product.id);
+            if (item) {
+              await wishlistAPI.removeFromWishlist(item.id);
+            }
+          }
+        }
+        setIsWishlisted(false);
+        toast.success('Removed from wishlist');
+      } else {
+        // Add to wishlist
+        await wishlistAPI.addToWishlist(product.id);
+        setIsWishlisted(true);
+        toast.success('Added to wishlist');
+      }
+      window.dispatchEvent(new CustomEvent('wishlistUpdated'));
+    } catch (error) {
+      console.error('Error toggling wishlist:', error);
+      if (error?.message?.includes('already in wishlist')) {
+        toast.error('Item already in wishlist');
+        setIsWishlisted(true);
+      } else {
+        toast.error(error?.message || 'Failed to update wishlist');
+      }
+    }
   };
 
   const getImageUrl = () => {
@@ -220,21 +245,21 @@ export default function ProductCard({ product, viewMode = 'grid' }) {
           <div className="flex items-center gap-2.5 mt-auto">
             <button
               onClick={handleAddToCart}
-              disabled={product.stock_quantity === 0}
+              disabled={product.stock_quantity === 0 || isAddingToCart}
               className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
-                product.stock_quantity === 0
+                product.stock_quantity === 0 || isAddingToCart
                   ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
                   : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 hover:shadow-lg active:scale-95'
               }`}
             >
               <ShoppingCart className="w-4 h-4" />
-              <span>{product.stock_quantity === 0 ? 'Out of Stock' : 'Add to Cart'}</span>
+              <span>{isAddingToCart ? 'Adding...' : product.stock_quantity === 0 ? 'Out of Stock' : 'Add to Cart'}</span>
             </button>
             <button
               onClick={handleBuyNow}
-              disabled={product.stock_quantity === 0}
+              disabled={product.stock_quantity === 0 || isAddingToCart}
               className={`flex-1 py-2.5 px-4 rounded-lg font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-md ${
-                product.stock_quantity === 0
+                product.stock_quantity === 0 || isAddingToCart
                   ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
                   : 'bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700 hover:shadow-lg active:scale-95'
               }`}
@@ -344,21 +369,21 @@ export default function ProductCard({ product, viewMode = 'grid' }) {
         <div className="flex gap-2 mt-2.5">
           <button
             onClick={handleAddToCart}
-            disabled={product.stock_quantity === 0}
+            disabled={product.stock_quantity === 0 || isAddingToCart}
             className={`flex-1 py-2 rounded-md font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
-              product.stock_quantity === 0
+              product.stock_quantity === 0 || isAddingToCart
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
             }`}
           >
             <ShoppingCart className="w-3.5 h-3.5" />
-            <span>{product.stock_quantity === 0 ? 'Out of Stock' : 'Cart'}</span>
+            <span>{isAddingToCart ? 'Adding...' : product.stock_quantity === 0 ? 'Out of Stock' : 'Cart'}</span>
           </button>
           <button
             onClick={handleBuyNow}
-            disabled={product.stock_quantity === 0}
+            disabled={product.stock_quantity === 0 || isAddingToCart}
             className={`flex-1 py-2 rounded-md font-medium text-xs transition-all flex items-center justify-center gap-1.5 ${
-              product.stock_quantity === 0
+              product.stock_quantity === 0 || isAddingToCart
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
                 : 'bg-orange-500 text-white hover:bg-orange-600 active:scale-95'
             }`}

@@ -7,31 +7,66 @@ import Header from '@/components/user/Header';
 import Footer from '@/components/user/Footer';
 import ProductCard from '@/components/user/ProductCard';
 import toast from 'react-hot-toast';
+import { wishlistAPI } from '@/lib/userApi';
+import { useRouter } from 'next/navigation';
 
 export default function WishlistPage() {
   const [wishlistItems, setWishlistItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     loadWishlist();
   }, []);
 
-  const loadWishlist = () => {
-    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-    setWishlistItems(wishlist);
-    setLoading(false);
+  const loadWishlist = async () => {
+    setLoading(true);
+    try {
+      const response = await wishlistAPI.getWishlist();
+      if (response.success && response.data) {
+        // Transform wishlist items to match ProductCard's expected format
+        const items = response.data.items.map(item => ({
+          wishlistItemId: item.id, // Store wishlist item ID for deletion
+          id: item.product.id,
+          name: item.product.name,
+          slug: item.product.slug,
+          sku: item.product.sku || 'N/A',
+          regular_price: item.product.regular_price,
+          sale_price: item.product.sale_price,
+          stock_quantity: item.product.stock_quantity,
+          image: item.product.product_images?.find(img => img.is_primary)?.image_url ||
+                 item.product.product_images?.[0]?.image_url || '',
+          images: item.product.product_images || [],
+          average_rating: item.product.average_rating || 4,
+          review_count: item.product.review_count || 0,
+        }));
+        setWishlistItems(items);
+        // Trigger event to update header count
+        window.dispatchEvent(new CustomEvent('wishlistUpdated', { detail: { count: items.length } }));
+      }
+    } catch (error) {
+      console.error('Error loading wishlist:', error);
+      // If error is 401 (unauthorized), redirect to login
+      if (error?.message?.includes('logged in')) {
+        toast.error('Please login to view your wishlist');
+        router.push('/login');
+      } else {
+        toast.error('Failed to load wishlist');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const saveWishlist = (items) => {
-    localStorage.setItem('wishlist', JSON.stringify(items));
-    setWishlistItems(items);
-    // Trigger event to update header count
-    window.dispatchEvent(new Event('wishlistUpdated'));
-  };
-
-  const clearWishlist = () => {
-    saveWishlist([]);
-    toast.success('Wishlist cleared');
+  const clearWishlist = async () => {
+    try {
+      await wishlistAPI.clearWishlist();
+      await loadWishlist(); // Reload wishlist
+      toast.success('Wishlist cleared');
+    } catch (error) {
+      console.error('Error clearing wishlist:', error);
+      toast.error('Failed to clear wishlist');
+    }
   };
 
   // Listen for wishlist updates from ProductCard component
@@ -59,7 +94,7 @@ export default function WishlistPage() {
         <Footer />
       </div>
     );
-  };
+  }
 
   if (wishlistItems.length === 0) {
     return (
@@ -120,9 +155,10 @@ export default function WishlistPage() {
               regular_price: item.regular_price,
               sale_price: item.sale_price,
               stock_quantity: item.stock_quantity,
-              images: item.image ? [{ image_url: item.image }] : [],
+              images: item.images,
               average_rating: item.average_rating || 4,
               review_count: item.review_count || 0,
+              wishlistItemId: item.wishlistItemId, // Pass wishlist item ID to ProductCard
             };
 
             return (
@@ -146,4 +182,3 @@ export default function WishlistPage() {
     </div>
   );
 }
-

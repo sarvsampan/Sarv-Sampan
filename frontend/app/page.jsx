@@ -14,6 +14,8 @@ export default function HomePage() {
   const [bestSellers, setBestSellers] = useState([]);
   const [categories, setCategories] = useState([]);
   const [deals, setDeals] = useState([]);
+  const [dealOfTheDay, setDealOfTheDay] = useState(null);
+  const [timeRemaining, setTimeRemaining] = useState({ hours: 0, minutes: 0, seconds: 0 });
   const [loading, setLoading] = useState(true);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
   const [dealsLoading, setDealsLoading] = useState(true);
@@ -23,6 +25,31 @@ export default function HomePage() {
     fetchCategories();
     fetchDeals();
   }, []);
+
+  // Countdown timer for Deal of the Day
+  useEffect(() => {
+    if (!dealOfTheDay || !dealOfTheDay.end_date) return;
+
+    const calculateTimeRemaining = () => {
+      const now = new Date().getTime();
+      const endDate = new Date(dealOfTheDay.end_date).getTime();
+      const difference = endDate - now;
+
+      if (difference > 0) {
+        const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((difference % (1000 * 60)) / 1000);
+        setTimeRemaining({ hours, minutes, seconds });
+      } else {
+        setTimeRemaining({ hours: 0, minutes: 0, seconds: 0 });
+      }
+    };
+
+    calculateTimeRemaining();
+    const timer = setInterval(calculateTimeRemaining, 1000);
+
+    return () => clearInterval(timer);
+  }, [dealOfTheDay]);
 
   const fetchCategories = async () => {
     try {
@@ -72,7 +99,16 @@ export default function HomePage() {
       if (response.ok) {
         const result = await response.json();
         if (result.success) {
-          setDeals(result.data || []);
+          const dealsData = result.data || [];
+          setDeals(dealsData);
+
+          // Set deal of the day (highest discount)
+          if (dealsData.length > 0) {
+            const bestDeal = dealsData.reduce((prev, current) =>
+              (prev.discount_percentage > current.discount_percentage) ? prev : current
+            );
+            setDealOfTheDay(bestDeal);
+          }
         }
       } else {
         console.warn('Deals API not available. Showing empty list.');
@@ -300,7 +336,7 @@ export default function HomePage() {
                 {deals.map((deal) => (
                   <Link
                     key={deal.id}
-                    href="/deals"
+                    href={`/deals/${deal.id}`}
                     className="group relative bg-white rounded-xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-300 hover:-translate-y-1"
                   >
                     {/* Deal Banner */}
@@ -345,6 +381,51 @@ export default function HomePage() {
                     </div>
                   </Link>
                 ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* Deal of the Day */}
+        {dealOfTheDay && (
+          <section className="py-12 bg-gradient-to-r from-orange-500 to-red-500 text-white">
+            <div className="container mx-auto px-4">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-2 mb-4">
+                    <Clock className="w-6 h-6" />
+                    <span className="text-sm font-semibold bg-white/20 px-3 py-1 rounded-full">
+                      Limited Time Offer
+                    </span>
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-bold mb-4">
+                    Deal of the Day
+                  </h2>
+                  <p className="text-lg mb-2 font-semibold">{dealOfTheDay.title}</p>
+                  <p className="text-xl mb-6">
+                    Get up to <span className="text-4xl font-bold">{dealOfTheDay.discount_percentage}% OFF</span> on selected items
+                  </p>
+                  <Link
+                    href={`/deals/${dealOfTheDay.id}`}
+                    className="inline-block px-8 py-4 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
+                  >
+                    Shop Now
+                  </Link>
+                </div>
+                <div className="flex space-x-4 text-center">
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4 w-20">
+                    <div className="text-3xl font-bold">{String(timeRemaining.hours).padStart(2, '0')}</div>
+                    <div className="text-xs">Hours</div>
+                  </div>
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4 w-20">
+                    <div className="text-3xl font-bold">{String(timeRemaining.minutes).padStart(2, '0')}</div>
+                    <div className="text-xs">Mins</div>
+                  </div>
+                  <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4 w-20">
+                    <div className="text-3xl font-bold">{String(timeRemaining.seconds).padStart(2, '0')}</div>
+                    <div className="text-xs">Secs</div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -396,48 +477,6 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Deal of the Day */}
-        <section className="py-12 bg-gradient-to-r from-orange-500 to-red-500 text-white">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col md:flex-row items-center justify-between gap-8">
-              <div className="flex-1">
-                <div className="flex items-center space-x-2 mb-4">
-                  <Clock className="w-6 h-6" />
-                  <span className="text-sm font-semibold bg-white/20 px-3 py-1 rounded-full">
-                    Limited Time Offer
-                  </span>
-                </div>
-                <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                  Deal of the Day
-                </h2>
-                <p className="text-xl mb-6">
-                  Get up to <span className="text-4xl font-bold">50% OFF</span> on selected items
-                </p>
-                <Link
-                  href="/deals"
-                  className="inline-block px-8 py-4 bg-white text-orange-600 rounded-lg font-semibold hover:bg-orange-50 transition-colors"
-                >
-                  Shop Deals
-                </Link>
-              </div>
-              <div className="flex space-x-4 text-center">
-                <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4 w-20">
-                  <div className="text-3xl font-bold">12</div>
-                  <div className="text-xs">Hours</div>
-                </div>
-                <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4 w-20">
-                  <div className="text-3xl font-bold">34</div>
-                  <div className="text-xs">Mins</div>
-                </div>
-                <div className="bg-white/20 backdrop-blur-sm rounded-lg p-4 w-20">
-                  <div className="text-3xl font-bold">56</div>
-                  <div className="text-xs">Secs</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
         {/* New Arrivals */}
         <section className="py-12">
           <div className="container mx-auto px-4">
@@ -481,34 +520,6 @@ export default function HomePage() {
                 <p className="text-slate-600">No new arrivals available</p>
               </div>
             )}
-          </div>
-        </section>
-
-        {/* Newsletter */}
-        <section className="py-16 bg-slate-900 text-white">
-          <div className="container mx-auto px-4">
-            <div className="max-w-2xl mx-auto text-center">
-              <h2 className="text-3xl font-bold mb-4">Subscribe to Our Newsletter</h2>
-              <p className="text-slate-300 mb-8">
-                Get updates on new products, exclusive deals, and special offers
-              </p>
-              <form className="flex flex-col sm:flex-row gap-4 max-w-md mx-auto">
-                <input
-                  type="email"
-                  placeholder="Enter your email"
-                  className="flex-1 px-4 py-3 rounded-lg bg-white text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="submit"
-                  className="px-8 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-                >
-                  Subscribe
-                </button>
-              </form>
-              <p className="text-xs text-slate-400 mt-4">
-                We respect your privacy. Unsubscribe at any time.
-              </p>
-            </div>
           </div>
         </section>
       </main>

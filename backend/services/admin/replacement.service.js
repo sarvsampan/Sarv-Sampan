@@ -11,11 +11,24 @@ class ReplacementService {
     const offset = getPaginationOffset(page, limit);
 
     let query = supabase
-      .from('replacements')
-      .select('*', { count: 'exact' });
+      .from('replacement_requests')
+      .select(`
+        *,
+        order:orders!replacement_requests_order_id_fkey (
+          order_number,
+          total_amount,
+          customer_email
+        ),
+        user:users!replacement_requests_user_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `, { count: 'exact' });
 
     if (status) query = query.eq('status', status);
-    if (search) query = query.ilike('replacement_number', `%${search}%`);
+    if (search) query = query.ilike('order_number', `%${search}%`);
 
     query = query
       .order('created_at', { ascending: false })
@@ -23,7 +36,10 @@ class ReplacementService {
 
     const { data: replacements, error, count } = await query;
 
-    if (error) throw new AppError(error.message, 500);
+    if (error) {
+      console.error('❌ Get all replacements error:', error);
+      throw new AppError(error.message, 500);
+    }
 
     return {
       replacements: replacements || [],
@@ -33,8 +49,21 @@ class ReplacementService {
 
   static async getReplacementById(id) {
     const { data: replacement, error } = await supabase
-      .from('replacements')
-      .select('*')
+      .from('replacement_requests')
+      .select(`
+        *,
+        order:orders!replacement_requests_order_id_fkey (
+          order_number,
+          total_amount,
+          customer_email
+        ),
+        user:users!replacement_requests_user_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
       .eq('id', id)
       .single();
 
@@ -61,7 +90,7 @@ class ReplacementService {
     };
 
     if (status !== 'pending') {
-      updateData.approved_by = adminId;
+      updateData.processed_by = adminId;
       updateData.processed_at = new Date().toISOString();
     }
 
@@ -78,7 +107,7 @@ class ReplacementService {
     }
 
     const { data: replacement, error } = await supabase
-      .from('replacements')
+      .from('replacement_requests')
       .update(updateData)
       .eq('id', replacementId)
       .select()
@@ -95,7 +124,7 @@ class ReplacementService {
     const replacement_number = `REP-${Date.now()}`;
 
     const { data: replacement, error } = await supabase
-      .from('replacements')
+      .from('replacement_requests')
       .insert({
         replacement_number,
         order_id,
@@ -115,7 +144,7 @@ class ReplacementService {
 
   static async getReplacementStats() {
     const { data: replacements, error } = await supabase
-      .from('replacements')
+      .from('replacement_requests')
       .select('status');
 
     if (error) throw new AppError(error.message, 500);

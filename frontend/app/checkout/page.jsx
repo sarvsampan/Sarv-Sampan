@@ -20,7 +20,7 @@ import {
 import Header from '@/components/user/Header';
 import Footer from '@/components/user/Footer';
 import toast from 'react-hot-toast';
-import { orderAPI, couponAPI } from '@/lib/userApi';
+import { orderAPI, couponAPI, cartAPI } from '@/lib/userApi';
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -72,14 +72,39 @@ export default function CheckoutPage() {
     }
   }, []);
 
-  const loadCart = () => {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    if (cart.length === 0) {
+  const loadCart = async () => {
+    setLoading(true);
+    try {
+      const response = await cartAPI.getCart();
+      if (response.success && response.data) {
+        // Transform cart items to match expected format
+        const items = response.data.items.map(item => ({
+          id: item.id,
+          productId: item.product.id,
+          name: item.product.name,
+          slug: item.product.slug,
+          price: item.product.sale_price || item.product.regular_price,
+          quantity: item.quantity,
+          image: item.product.product_images?.find(img => img.is_primary)?.image_url ||
+                 item.product.product_images?.[0]?.image_url || '',
+        }));
+
+        if (items.length === 0) {
+          router.push('/cart');
+          return;
+        }
+
+        setCartItems(items);
+      } else {
+        router.push('/cart');
+      }
+    } catch (error) {
+      console.error('Error loading cart:', error);
+      toast.error('Failed to load cart');
       router.push('/cart');
-      return;
+    } finally {
+      setLoading(false);
     }
-    setCartItems(cart);
-    setLoading(false);
   };
 
   const loadUserData = () => {
@@ -90,6 +115,11 @@ export default function CheckoutPage() {
         ...prev,
         fullName: user.name || '',
         email: user.email || '',
+        phone: user.phone || '',
+        address: user.address || '',
+        city: user.city || '',
+        state: user.state || '',
+        pincode: user.pincode || '',
       }));
     }
   };
@@ -194,34 +224,54 @@ export default function CheckoutPage() {
     setProcessing(true);
 
     try {
-      const orderData = {
-        items: cartItems.map(item => ({
-          product_id: item.id,
-          name: item.name,
-          slug: item.slug,
-          price: item.price,
-          quantity: item.quantity,
-          image: item.image || item.images?.[0]?.image_url
-        })),
-        shipping_address: shippingInfo,
-        billing_address: sameAsShipping ? shippingInfo : billingInfo,
-        payment_method: paymentMethod,
-        subtotal: subtotal,
-        shipping_cost: shipping,
-        tax_amount: tax,
-        discount_amount: discount,
-        total_amount: total,
-        coupon_code: appliedCoupon?.code || null,
-      };
+      const createdOrders = [];
+      const totalDiscount = discount;
 
-      const response = await orderAPI.createOrder(orderData);
+      // Create separate order for each cart item
+      for (let i = 0; i < cartItems.length; i++) {
+        const item = cartItems[i];
+        const itemSubtotal = item.price * item.quantity;
+        const itemShipping = itemSubtotal >= 999 ? 0 : 99;
+
+        // Apply full discount to first order only
+        const itemDiscount = i === 0 ? totalDiscount : 0;
+        const itemTotal = itemSubtotal + itemShipping - itemDiscount;
+
+        const orderData = {
+          items: [{
+            product_id: item.productId,
+            name: item.name,
+            slug: item.slug,
+            price: item.price,
+            quantity: item.quantity,
+            image: item.image || item.images?.[0]?.image_url
+          }],
+          shipping_address: shippingInfo,
+          billing_address: sameAsShipping ? shippingInfo : billingInfo,
+          payment_method: paymentMethod,
+          subtotal: itemSubtotal,
+          shipping_cost: itemShipping,
+          tax_amount: 0,
+          discount_amount: itemDiscount,
+          total_amount: itemTotal,
+          coupon_code: (i === 0 && appliedCoupon?.code) ? appliedCoupon.code : null,
+        };
+
+        const response = await orderAPI.createOrder(orderData);
+        createdOrders.push(response.data);
+      }
 
       // Clear cart
-      localStorage.setItem('cart', JSON.stringify([]));
-      window.dispatchEvent(new Event('cartUpdated'));
+      try {
+        await cartAPI.clearCart();
+        window.dispatchEvent(new CustomEvent('cartUpdated'));
+      } catch (error) {
+        console.error('Error clearing cart:', error);
+      }
 
-      toast.success('Order placed successfully!');
-      router.push(`/order-success?order=${response.data.order_number}`);
+      toast.success(`${createdOrders.length} orders placed successfully!`);
+      // Redirect to the first order's success page
+      router.push(`/order-success?order=${createdOrders[0].order_number}`);
     } catch (error) {
       console.error('Order creation error:', error);
 
@@ -245,8 +295,7 @@ export default function CheckoutPage() {
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
   const shipping = subtotal >= 999 ? 0 : 99;
   const discount = appliedCoupon?.discount_amount || 0;
-  const tax = (subtotal - discount) * 0.18;
-  const total = subtotal + shipping + tax - discount;
+  const total = subtotal + shipping - discount;
 
   const indianStates = [
     'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -680,10 +729,6 @@ export default function CheckoutPage() {
                     <span>-₹{discount.toLocaleString('en-IN')}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-sm text-slate-700">
-                  <span>Tax (18% GST)</span>
-                  <span>₹{tax.toFixed(0)}</span>
-                </div>
               </div>
 
               {/* Coupon Section */}

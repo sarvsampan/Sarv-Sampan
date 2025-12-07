@@ -2,13 +2,14 @@ import supabase from '../../config/supabase.js';
 import { hashPassword, comparePassword } from '../../utils/password.js';
 import { generateToken } from '../../utils/jwt.js';
 import { AppError } from '../../middlewares/error.middleware.js';
+import { CartService } from './cart.service.js';
 
 export class UserAuthService {
   /**
    * User Signup
    */
   static async signup(userData) {
-    const { email, password, name, phone } = userData;
+    const { email, password, first_name, last_name, phone } = userData;
 
     // Check if email already exists
     const { data: existing } = await supabase
@@ -29,14 +30,15 @@ export class UserAuthService {
       .from('users')
       .insert({
         email,
-        password: hashedPassword,
-        name,
+        password_hash: hashedPassword,
+        first_name,
+        last_name,
         phone,
         role: 'user',
-        is_active: true,
+        status: 'active',
         email_verified: false,
       })
-      .select('id, email, name, phone, role, created_at')
+      .select('id, email, first_name, last_name, phone, role, created_at')
       .single();
 
     if (error) throw new AppError(error.message, 500);
@@ -56,7 +58,7 @@ export class UserAuthService {
   /**
    * User Login
    */
-  static async login(email, password) {
+  static async login(email, password, sessionId = null) {
     // Find user by email
     const { data: user, error } = await supabase
       .from('users')
@@ -68,16 +70,31 @@ export class UserAuthService {
       throw new AppError('Invalid email or password', 401);
     }
 
+    // Check if password exists (database uses password_hash field)
+    if (!user.password_hash) {
+      throw new AppError('User account not properly set up. Please contact support.', 500);
+    }
+
     // Check if user is active
-    if (!user.is_active) {
+    if (user.status !== 'active') {
       throw new AppError('Account is inactive. Please contact support.', 403);
     }
 
     // Verify password
-    const isPasswordValid = await comparePassword(password, user.password);
+    const isPasswordValid = await comparePassword(password, user.password_hash);
 
     if (!isPasswordValid) {
       throw new AppError('Invalid email or password', 401);
+    }
+
+    // Merge guest cart to user cart if sessionId is provided
+    if (sessionId) {
+      try {
+        await CartService.mergeCart(user.id, sessionId);
+      } catch (error) {
+        // Don't fail login if cart merge fails
+        console.error('Cart merge failed:', error);
+      }
     }
 
     // Update last activity
@@ -92,8 +109,8 @@ export class UserAuthService {
       email: user.email,
     });
 
-    // Return user data (exclude password)
-    const { password: _, ...userData } = user;
+    // Return user data (exclude password_hash)
+    const { password_hash: _, ...userData } = user;
 
     return {
       user: userData,
@@ -105,9 +122,9 @@ export class UserAuthService {
    * Get User Profile
    */
   static async getProfile(userId) {
-    const { data: user, error } = await supabase
+    const { data: user, error} = await supabase
       .from('users')
-      .select('id, email, name, phone, role, is_active, email_verified, created_at')
+      .select('id, email, first_name, last_name, phone, role, status, email_verified, created_at')
       .eq('id', userId)
       .single();
 

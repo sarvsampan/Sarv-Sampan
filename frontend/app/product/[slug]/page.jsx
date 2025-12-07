@@ -19,7 +19,9 @@ import {
 import Header from '@/components/user/Header';
 import Footer from '@/components/user/Footer';
 import ProductCard from '@/components/user/ProductCard';
+import ProductReviews from '@/components/user/ProductReviews';
 import toast from 'react-hot-toast';
+import { cartAPI, wishlistAPI } from '@/lib/userApi';
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -87,77 +89,106 @@ export default function ProductDetailPage() {
 
   useEffect(() => {
     if (product) {
-      const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-      const isInWishlist = wishlist.some(item => item.id === product.id);
-      setIsWishlisted(isInWishlist);
+      checkWishlistStatus();
     }
   }, [product]);
 
-  const handleAddToCart = () => {
+  const checkWishlistStatus = async () => {
+    try {
+      const token = localStorage.getItem('userToken');
+      if (!token) {
+        setIsWishlisted(false);
+        return;
+      }
+
+      const response = await wishlistAPI.checkWishlist(product.id);
+      if (response.success) {
+        setIsWishlisted(response.data.isInWishlist);
+      }
+    } catch (error) {
+      setIsWishlisted(false);
+    }
+  };
+
+  const handleAddToCart = async () => {
     if (product.stock_quantity === 0) {
       toast.error('Product is out of stock');
       return;
     }
 
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    const existingItem = cart.find(item => item.id === product.id);
-
-    if (existingItem) {
-      // Update quantity
-      existingItem.quantity = Math.min(existingItem.quantity + quantity, product.stock_quantity);
-      localStorage.setItem('cart', JSON.stringify(cart));
-      toast.success('Cart updated!');
-    } else {
-      const cartItem = {
-        id: product.id,
-        name: product.name,
-        slug: product.slug,
-        sku: product.sku,
-        price: product.sale_price || product.regular_price,
-        image: product.images && product.images.length > 0 ? product.images[0].image_url : null,
-        quantity: quantity,
-      };
-      cart.push(cartItem);
-      localStorage.setItem('cart', JSON.stringify(cart));
+    try {
+      await cartAPI.addToCart(product.id, quantity);
+      window.dispatchEvent(new CustomEvent('cartUpdated'));
       toast.success(`Added ${quantity} item(s) to cart!`);
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+      if (error?.message?.includes('already in cart') || error?.message?.includes('already exists')) {
+        // Item exists, try updating quantity instead
+        try {
+          const cartResponse = await cartAPI.getCart();
+          if (cartResponse.success) {
+            const existingItem = cartResponse.data.items.find(item => item.product.id === product.id);
+            if (existingItem) {
+              const newQuantity = Math.min(existingItem.quantity + quantity, product.stock_quantity);
+              await cartAPI.updateQuantity(existingItem.id, newQuantity);
+              window.dispatchEvent(new CustomEvent('cartUpdated'));
+              toast.success('Cart updated!');
+              return;
+            }
+          }
+        } catch (updateError) {
+          console.error('Error updating cart:', updateError);
+        }
+        toast.error('Item already in cart');
+      } else {
+        toast.error(error?.message || 'Failed to add to cart');
+      }
     }
-
-    window.dispatchEvent(new Event('cartUpdated'));
   };
 
-  const handleBuyNow = () => {
-    handleAddToCart();
+  const handleBuyNow = async () => {
+    await handleAddToCart();
     setTimeout(() => {
       router.push('/cart');
     }, 500);
   };
 
-  const handleToggleWishlist = () => {
-    const wishlist = JSON.parse(localStorage.getItem('wishlist') || '[]');
-    const existingIndex = wishlist.findIndex(item => item.id === product.id);
-
-    if (existingIndex > -1) {
-      wishlist.splice(existingIndex, 1);
-      setIsWishlisted(false);
-      toast.success('Removed from wishlist');
-    } else {
-      const wishlistItem = {
-        id: product.id,
-        name: product.name,
-        slug: product.slug,
-        sku: product.sku,
-        regular_price: product.regular_price,
-        sale_price: product.sale_price,
-        stock_quantity: product.stock_quantity,
-        image: product.images && product.images.length > 0 ? product.images[0].image_url : null,
-      };
-      wishlist.push(wishlistItem);
-      setIsWishlisted(true);
-      toast.success('Added to wishlist');
+  const handleToggleWishlist = async () => {
+    const token = localStorage.getItem('userToken');
+    if (!token) {
+      toast.error('Please login to add to wishlist');
+      router.push('/login');
+      return;
     }
 
-    localStorage.setItem('wishlist', JSON.stringify(wishlist));
-    window.dispatchEvent(new Event('wishlistUpdated'));
+    try {
+      if (isWishlisted) {
+        // Remove from wishlist
+        const wishlistResponse = await wishlistAPI.getWishlist();
+        if (wishlistResponse.success) {
+          const item = wishlistResponse.data.items.find(i => i.product.id === product.id);
+          if (item) {
+            await wishlistAPI.removeFromWishlist(item.id);
+            setIsWishlisted(false);
+            toast.success('Removed from wishlist');
+          }
+        }
+      } else {
+        // Add to wishlist
+        await wishlistAPI.addToWishlist(product.id);
+        setIsWishlisted(true);
+        toast.success('Added to wishlist');
+      }
+      window.dispatchEvent(new CustomEvent('wishlistUpdated'));
+    } catch (error) {
+      console.error('Error toggling wishlist:', error);
+      if (error?.message?.includes('already in wishlist')) {
+        toast.error('Item already in wishlist');
+        setIsWishlisted(true);
+      } else {
+        toast.error(error?.message || 'Failed to update wishlist');
+      }
+    }
   };
 
   const handleShare = () => {
@@ -505,10 +536,7 @@ export default function ProductDetailPage() {
             )}
 
             {activeTab === 'reviews' && (
-              <div>
-                <h3 className="text-xl font-bold text-slate-900 mb-4">Customer Reviews</h3>
-                <p className="text-slate-600 text-center py-8">No reviews yet. Be the first to review this product!</p>
-              </div>
+              <ProductReviews productId={product.id} productName={product.name} />
             )}
           </div>
         </div>

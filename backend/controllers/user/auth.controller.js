@@ -46,7 +46,7 @@ export class UserAuthController {
    * User Login
    */
   static login = asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, session_id } = req.body;
 
     // Validate required fields
     if (!email || !password) {
@@ -56,7 +56,7 @@ export class UserAuthController {
       });
     }
 
-    const result = await UserAuthService.login(email, password);
+    const result = await UserAuthService.login(email, password, session_id);
 
     res.json({
       success: true,

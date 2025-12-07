@@ -3,92 +3,95 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Trash2, Plus, Minus, ShoppingBag, ArrowLeft, Tag } from 'lucide-react';
+import { Trash2, Plus, Minus, ShoppingBag, ArrowLeft } from 'lucide-react';
 import Header from '@/components/user/Header';
 import Footer from '@/components/user/Footer';
 import toast from 'react-hot-toast';
-import { couponAPI } from '@/lib/userApi';
+import { cartAPI } from '@/lib/userApi';
 
 export default function CartPage() {
   const [cartItems, setCartItems] = useState([]);
-  const [couponCode, setCouponCode] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [applyingCoupon, setApplyingCoupon] = useState(false);
 
   useEffect(() => {
     loadCart();
   }, []);
 
-  const loadCart = () => {
-    const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-    setCartItems(cart);
-    setLoading(false);
+  const loadCart = async () => {
+    setLoading(true);
+    try {
+      const response = await cartAPI.getCart();
+      if (response.success && response.data) {
+        // Transform cart items to match expected format
+        const items = response.data.items.map(item => ({
+          id: item.id,
+          productId: item.product.id,
+          name: item.product.name,
+          slug: item.product.slug,
+          price: item.product.sale_price || item.product.regular_price,
+          quantity: item.quantity,
+          image: item.product.product_images?.find(img => img.is_primary)?.image_url ||
+                 item.product.product_images?.[0]?.image_url || '',
+          sku: item.product.sku || 'N/A',
+          stock: item.product.stock_quantity
+        }));
+        setCartItems(items);
+        // Trigger event to update header count
+        window.dispatchEvent(new CustomEvent('cartUpdated', { detail: { count: items.length } }));
+      }
+    } catch (error) {
+      console.error('Error loading cart:', error);
+      toast.error('Failed to load cart');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const saveCart = (items) => {
-    localStorage.setItem('cart', JSON.stringify(items));
-    setCartItems(items);
-    // Trigger event to update header count
-    window.dispatchEvent(new Event('cartUpdated'));
-  };
-
-  const updateQuantity = (itemId, newQuantity) => {
+  const updateQuantity = async (cartItemId, newQuantity) => {
     if (newQuantity < 1) return;
-    const updatedCart = cartItems.map(item =>
-      item.id === itemId ? { ...item, quantity: newQuantity } : item
-    );
-    saveCart(updatedCart);
-    toast.success('Quantity updated');
-  };
 
-  const removeItem = (itemId) => {
-    const updatedCart = cartItems.filter(item => item.id !== itemId);
-    saveCart(updatedCart);
-    toast.success('Item removed from cart');
-  };
-
-  const applyCoupon = async () => {
-    if (couponCode.trim() === '') {
-      toast.error('Please enter a coupon code');
+    // Find the item to check stock
+    const item = cartItems.find(i => i.id === cartItemId);
+    if (item && newQuantity > item.stock) {
+      toast.error(`Only ${item.stock} items available in stock`);
       return;
     }
 
-    setApplyingCoupon(true);
     try {
-      const response = await couponAPI.validateCoupon(couponCode, subtotal);
-
-      if (response.data && response.data.valid) {
-        setAppliedCoupon({
-          code: response.data.code,
-          discount: response.data.discount_amount,
-          type: response.data.discount_type,
-          value: response.data.discount_value,
-          description: response.data.description
-        });
-        toast.success(`Coupon "${response.data.code}" applied successfully!`);
-      } else {
-        toast.error('Invalid coupon code');
-      }
+      await cartAPI.updateQuantity(cartItemId, newQuantity);
+      await loadCart(); // Reload cart to get updated data
+      toast.success('Quantity updated');
     } catch (error) {
-      const errorMessage = error?.message || 'Invalid coupon code';
-      toast.error(errorMessage);
-    } finally {
-      setApplyingCoupon(false);
+      console.error('Error updating quantity:', error);
+      toast.error(error?.message || 'Failed to update quantity');
     }
   };
 
-  const removeCoupon = () => {
-    setAppliedCoupon(null);
-    setCouponCode('');
-    toast.success('Coupon removed');
+  const removeItem = async (cartItemId) => {
+    try {
+      await cartAPI.removeFromCart(cartItemId);
+      await loadCart(); // Reload cart to get updated data
+      toast.success('Item removed from cart');
+    } catch (error) {
+      console.error('Error removing item:', error);
+      toast.error('Failed to remove item');
+    }
+  };
+
+  const clearCart = async () => {
+    try {
+      await cartAPI.clearCart();
+      await loadCart(); // Reload cart to get updated data
+      toast.success('Cart cleared');
+    } catch (error) {
+      console.error('Error clearing cart:', error);
+      toast.error('Failed to clear cart');
+    }
   };
 
   const subtotal = cartItems.reduce((sum, item) => sum + (item.price || 0) * (item.quantity || 1), 0);
-  const discount = appliedCoupon ? appliedCoupon.discount : 0;
   const shipping = subtotal >= 999 ? 0 : 99;
-  const tax = (subtotal - discount) * 0.18; // 18% GST
-  const total = subtotal - discount + shipping + tax;
+  const total = subtotal + shipping;
 
   if (loading) {
     return (
@@ -185,6 +188,11 @@ export default function CartPage() {
                           {item.name}
                         </Link>
                         <p className="text-xs text-slate-500 mt-1">SKU: {item.sku}</p>
+                        {item.stock < 10 && (
+                          <p className="text-xs text-orange-600 mt-1">
+                            Only {item.stock} left in stock
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => removeItem(item.id)}
@@ -199,19 +207,26 @@ export default function CartPage() {
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => updateQuantity(item.id, item.quantity - 1)}
-                          className="w-7 h-7 border border-slate-300 rounded hover:bg-slate-100 flex items-center justify-center"
+                          disabled={item.quantity <= 1}
+                          className="w-7 h-7 border border-slate-300 rounded hover:bg-slate-100 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
                         <input
                           type="number"
                           value={item.quantity}
-                          onChange={(e) => updateQuantity(item.id, parseInt(e.target.value) || 1)}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 1;
+                            updateQuantity(item.id, value);
+                          }}
+                          min="1"
+                          max={item.stock}
                           className="w-12 h-7 text-center text-sm border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         />
                         <button
                           onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                          className="w-7 h-7 border border-slate-300 rounded hover:bg-slate-100 flex items-center justify-center"
+                          disabled={item.quantity >= item.stock}
+                          className="w-7 h-7 border border-slate-300 rounded hover:bg-slate-100 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Plus className="w-3 h-3" />
                         </button>
@@ -234,10 +249,7 @@ export default function CartPage() {
 
             {/* Clear Cart Button */}
             <button
-              onClick={() => {
-                saveCart([]);
-                toast.success('Cart cleared');
-              }}
+              onClick={clearCart}
               className="w-full py-3 text-red-600 hover:bg-red-50 rounded-lg border border-red-200 font-semibold transition-colors"
             >
               Clear Cart
@@ -249,60 +261,12 @@ export default function CartPage() {
             <div className="bg-white rounded-lg border border-slate-200 p-4 sticky top-4">
               <h2 className="text-lg font-bold text-slate-900 mb-4">Order Summary</h2>
 
-              {/* Coupon Code */}
-              <div className="mb-4">
-                <label className="block text-xs font-semibold text-slate-900 mb-2">
-                  Have a Coupon?
-                </label>
-                {appliedCoupon ? (
-                  <div className="flex items-center justify-between p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <Tag className="w-3 h-3 text-emerald-600" />
-                      <span className="text-sm font-semibold text-emerald-900">
-                        {appliedCoupon.code}
-                      </span>
-                      <span className="text-xs text-emerald-600">
-                        ({appliedCoupon.value}% off)
-                      </span>
-                    </div>
-                    <button
-                      onClick={removeCoupon}
-                      className="text-red-600 hover:text-red-700 text-xs font-semibold"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                      placeholder="Coupon code"
-                      className="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <button
-                      onClick={applyCoupon}
-                      className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700"
-                    >
-                      Apply
-                    </button>
-                  </div>
-                )}
-              </div>
-
               {/* Price Breakdown */}
               <div className="space-y-2 mb-4 pb-4 border-b border-slate-200">
                 <div className="flex justify-between text-sm text-slate-700">
                   <span>Subtotal ({cartItems.length} items)</span>
                   <span>₹{subtotal.toLocaleString('en-IN')}</span>
                 </div>
-                {appliedCoupon && (
-                  <div className="flex justify-between text-sm text-emerald-600">
-                    <span>Discount ({appliedCoupon.code})</span>
-                    <span>-₹{discount.toLocaleString('en-IN')}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-sm text-slate-700">
                   <span>Shipping</span>
                   <span>
@@ -312,10 +276,6 @@ export default function CartPage() {
                       `₹${shipping}`
                     )}
                   </span>
-                </div>
-                <div className="flex justify-between text-sm text-slate-700">
-                  <span>Tax (18% GST)</span>
-                  <span>₹{tax.toFixed(0)}</span>
                 </div>
               </div>
 
@@ -356,4 +316,3 @@ export default function CartPage() {
     </div>
   );
 }
-

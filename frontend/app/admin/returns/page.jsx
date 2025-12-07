@@ -184,16 +184,21 @@ export default function Returns() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredReturns.map((returnReq) => (
+              {filteredReturns.map((returnReq) => {
+                const userName = returnReq.user
+                  ? `${returnReq.user.first_name || ''} ${returnReq.user.last_name || ''}`.trim()
+                  : 'N/A';
+
+                return (
                 <tr key={returnReq.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-4 py-3">
-                    <span className="text-sm font-medium text-slate-900">{returnReq.return_number}</span>
+                    <span className="text-sm font-medium text-slate-900">{returnReq.order_number || 'N/A'}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="text-sm text-slate-900">#{returnReq.order?.order_number || 'N/A'}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="text-sm text-slate-900">{returnReq.user?.name || 'N/A'}</div>
+                    <div className="text-sm text-slate-900">{userName}</div>
                     <div className="text-xs text-slate-500">{returnReq.user?.email || 'N/A'}</div>
                   </td>
                   <td className="px-4 py-3">
@@ -221,7 +226,8 @@ export default function Returns() {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -242,10 +248,10 @@ export default function Returns() {
               <div className="flex justify-between items-center">
                 <div>
                   <h2 className="text-xl font-bold text-slate-900">
-                    Return #{selectedReturn.return_number}
+                    Return Request
                   </h2>
                   <p className="text-sm text-slate-500 mt-0.5">
-                    Order #{selectedReturn.order?.order_number} • {format(new Date(selectedReturn.created_at), 'MMM dd, yyyy • hh:mm a')}
+                    Order #{selectedReturn.order?.order_number || selectedReturn.order_number} • {format(new Date(selectedReturn.created_at), 'MMM dd, yyyy • hh:mm a')}
                   </p>
                 </div>
                 <button
@@ -279,7 +285,9 @@ export default function Returns() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
                   <h3 className="text-sm font-bold text-slate-900 mb-3">Customer</h3>
-                  <p className="text-sm text-slate-900 font-medium">{selectedReturn.user?.name}</p>
+                  <p className="text-sm text-slate-900 font-medium">
+                    {selectedReturn.user ? `${selectedReturn.user.first_name || ''} ${selectedReturn.user.last_name || ''}`.trim() : 'N/A'}
+                  </p>
                   <p className="text-xs text-slate-500 mt-1">{selectedReturn.user?.email}</p>
                 </div>
                 <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
@@ -296,6 +304,25 @@ export default function Returns() {
                   <p className="text-sm text-slate-600 mt-2">{selectedReturn.description}</p>
                 )}
               </div>
+
+              {/* Uploaded Images */}
+              {selectedReturn.images && selectedReturn.images.length > 0 && (
+                <div className="bg-white rounded-lg p-4 border border-slate-200 shadow-sm">
+                  <h3 className="text-sm font-bold text-slate-900 mb-3">Uploaded Images</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    {selectedReturn.images.map((image, index) => (
+                      <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200">
+                        <img
+                          src={image}
+                          alt={`Return image ${index + 1}`}
+                          className="w-full h-full object-cover hover:scale-110 transition-transform duration-300 cursor-pointer"
+                          onClick={() => window.open(image, '_blank')}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Admin Notes */}
               {selectedReturn.admin_notes && (

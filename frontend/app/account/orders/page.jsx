@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { Package, Clock, CheckCircle, XCircle, Eye, Truck, ArrowLeft } from 'lucide-react';
+import { Package, Clock, CheckCircle, XCircle, Eye, Truck, ArrowLeft, ShoppingBag } from 'lucide-react';
 import Header from '@/components/user/Header';
 import Footer from '@/components/user/Footer';
 import toast from 'react-hot-toast';
@@ -13,11 +14,10 @@ export default function OrdersPage() {
   const router = useRouter();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); // all, pending, delivered, cancelled
+  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
     const checkAuthAndFetchOrders = async () => {
-      // Check if user is logged in
       const token = localStorage.getItem('userToken');
       const user = localStorage.getItem('user');
 
@@ -39,7 +39,6 @@ export default function OrdersPage() {
 
       const response = await orderAPI.getUserOrders();
 
-      // Transform orders data to match UI format
       const transformedOrders = (response.data || []).map(order => ({
         id: order.order_number,
         date: new Date(order.created_at).toLocaleDateString('en-US', {
@@ -49,16 +48,17 @@ export default function OrdersPage() {
         }),
         status: order.status,
         total: order.total_amount,
-        items: (order.items || []).map(item => ({
+        items: (order.order_items || []).map(item => ({
           name: item.product_name,
           quantity: item.quantity,
-          price: item.price
+          price: item.price,
+          image: item.product_image,
+          slug: item.product_slug || '#'
         }))
       }));
 
       setOrders(transformedOrders);
     } catch (error) {
-      // Save error to localStorage before redirect happens
       localStorage.setItem('lastOrdersError', JSON.stringify({
         message: error?.message,
         status: error?.status,
@@ -71,15 +71,13 @@ export default function OrdersPage() {
     }
   };
 
-  const handleCancelOrder = async (orderNumber) => {
-    if (!confirm('Are you sure you want to cancel this order?')) {
-      return;
-    }
+  const handleCancelOrder = async (orderNumber, e) => {
+    e.stopPropagation();
 
     try {
       await orderAPI.cancelOrder(orderNumber);
       toast.success('Order cancelled successfully!');
-      fetchOrders(); // Refresh orders list
+      fetchOrders();
     } catch (error) {
       toast.error(error?.message || 'Failed to cancel order');
     }
@@ -91,12 +89,14 @@ export default function OrdersPage() {
 
   const getStatusColor = (status) => {
     switch (status) {
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-700';
+      case 'processing':
+        return 'bg-blue-100 text-blue-700';
+      case 'shipped':
+        return 'bg-purple-100 text-purple-700';
       case 'delivered':
         return 'bg-green-100 text-green-700';
-      case 'shipped':
-        return 'bg-blue-100 text-blue-700';
-      case 'processing':
-        return 'bg-yellow-100 text-yellow-700';
       case 'cancelled':
         return 'bg-red-100 text-red-700';
       default:
@@ -106,12 +106,14 @@ export default function OrdersPage() {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'delivered':
-        return <CheckCircle className="w-4 h-4" />;
+      case 'pending':
+        return <Clock className="w-4 h-4" />;
+      case 'processing':
+        return <Package className="w-4 h-4" />;
       case 'shipped':
         return <Truck className="w-4 h-4" />;
-      case 'processing':
-        return <Clock className="w-4 h-4" />;
+      case 'delivered':
+        return <CheckCircle className="w-4 h-4" />;
       case 'cancelled':
         return <XCircle className="w-4 h-4" />;
       default:
@@ -122,6 +124,11 @@ export default function OrdersPage() {
   const filteredOrders = filter === 'all'
     ? orders
     : orders.filter(order => order.status === filter);
+
+  const handleOrderClick = (order) => {
+    // Navigate to order tracking/details page
+    router.push(`/track-order?order=${order.id}`);
+  };
 
   if (loading) {
     return (
@@ -143,13 +150,6 @@ export default function OrdersPage() {
       <Header />
 
       <main className="container mx-auto px-4 py-8">
-        {/* Breadcrumbs */}
-        <nav className="flex items-center space-x-2 text-sm mb-6">
-          <Link href="/" className="text-blue-600 hover:underline">Home</Link>
-          <span className="text-slate-400">/</span>
-          <span className="text-slate-700">My Orders</span>
-        </nav>
-
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
@@ -168,58 +168,20 @@ export default function OrdersPage() {
           </Link>
         </div>
 
-        {/* Filter Tabs */}
-        <div className="flex space-x-2 mb-6 overflow-x-auto">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-              filter === 'all'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-slate-700 hover:bg-slate-100'
-            }`}
+        {/* Filter Dropdown */}
+        <div className="mb-6">
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
-            All Orders ({orders.length})
-          </button>
-          <button
-            onClick={() => setFilter('processing')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-              filter === 'processing'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            Processing ({orders.filter(o => o.status === 'processing').length})
-          </button>
-          <button
-            onClick={() => setFilter('shipped')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-              filter === 'shipped'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            Shipped ({orders.filter(o => o.status === 'shipped').length})
-          </button>
-          <button
-            onClick={() => setFilter('delivered')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-              filter === 'delivered'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            Delivered ({orders.filter(o => o.status === 'delivered').length})
-          </button>
-          <button
-            onClick={() => setFilter('cancelled')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm whitespace-nowrap transition-colors ${
-              filter === 'cancelled'
-                ? 'bg-blue-600 text-white'
-                : 'bg-white text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            Cancelled ({orders.filter(o => o.status === 'cancelled').length})
-          </button>
+            <option value="all">All Orders ({orders.length})</option>
+            <option value="pending">Pending ({orders.filter(o => o.status === 'pending').length})</option>
+            <option value="processing">Processing ({orders.filter(o => o.status === 'processing').length})</option>
+            <option value="shipped">Shipped ({orders.filter(o => o.status === 'shipped').length})</option>
+            <option value="delivered">Delivered ({orders.filter(o => o.status === 'delivered').length})</option>
+            <option value="cancelled">Cancelled ({orders.filter(o => o.status === 'cancelled').length})</option>
+          </select>
         </div>
 
         {/* Orders List */}
@@ -244,7 +206,8 @@ export default function OrdersPage() {
             {filteredOrders.map((order) => (
               <div
                 key={order.id}
-                className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-lg transition-shadow"
+                onClick={() => handleOrderClick(order)}
+                className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:shadow-lg transition-all cursor-pointer"
               >
                 {/* Order Header */}
                 <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
@@ -273,6 +236,7 @@ export default function OrdersPage() {
                       <div className="flex items-center space-x-2">
                         <Link
                           href={`/track-order?order=${order.id}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="px-4 py-2 border border-slate-300 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors flex items-center space-x-2"
                         >
                           <Eye className="w-4 h-4" />
@@ -280,11 +244,11 @@ export default function OrdersPage() {
                         </Link>
                         {canCancelOrder(order.status) && (
                           <button
-                            onClick={() => handleCancelOrder(order.id)}
+                            onClick={(e) => handleCancelOrder(order.id, e)}
                             className="px-4 py-2 border border-red-300 bg-red-50 rounded-lg text-sm font-medium text-red-600 hover:bg-red-100 transition-colors flex items-center space-x-2"
                           >
                             <XCircle className="w-4 h-4" />
-                            <span>Cancel</span>
+                            <span>Cancel Order</span>
                           </button>
                         )}
                       </div>
@@ -297,8 +261,20 @@ export default function OrdersPage() {
                   <div className="space-y-3">
                     {order.items.map((item, index) => (
                       <div key={index} className="flex items-center space-x-4">
-                        <div className="w-16 h-16 bg-slate-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Package className="w-8 h-8 text-slate-400" />
+                        <div className="w-16 h-16 bg-slate-100 rounded-lg overflow-hidden flex-shrink-0">
+                          {item.image ? (
+                            <Image
+                              src={item.image}
+                              alt={item.name}
+                              width={64}
+                              height={64}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <ShoppingBag className="w-8 h-8 text-slate-400" />
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-slate-900 truncate">{item.name}</p>

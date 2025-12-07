@@ -18,6 +18,9 @@ export default function ProfilePage() {
     email: '',
     phone: '',
     address: '',
+    city: '',
+    state: '',
+    pincode: '',
   });
 
   useEffect(() => {
@@ -37,6 +40,9 @@ export default function ProfilePage() {
       email: parsedUser.email || '',
       phone: parsedUser.phone || '',
       address: parsedUser.address || '',
+      city: parsedUser.city || '',
+      state: parsedUser.state || '',
+      pincode: parsedUser.pincode || '',
     });
   }, [router]);
 
@@ -74,13 +80,6 @@ export default function ProfilePage() {
       <Header />
 
       <main className="container mx-auto px-4 py-6">
-        {/* Breadcrumbs */}
-        <nav className="flex items-center space-x-2 text-xs mb-4">
-          <Link href="/" className="text-blue-600 hover:underline">Home</Link>
-          <span className="text-slate-400">/</span>
-          <span className="text-slate-700">My Account</span>
-        </nav>
-
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Sidebar */}
           <div className="lg:col-span-1">
@@ -178,7 +177,12 @@ export default function ProfilePage() {
                         <Mail className="w-4 h-4 text-slate-400" />
                         <span className="text-sm text-slate-900">{user.email}</span>
                       </div>
-                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Verified</span>
+                      {user.email_verified && (
+                        <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Verified</span>
+                      )}
+                      {!user.email_verified && (
+                        <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded">Not Verified</span>
+                      )}
                     </div>
                     {editing && (
                       <p className="text-xs text-slate-500 mt-1">Email cannot be changed</p>
@@ -209,20 +213,84 @@ export default function ProfilePage() {
                   {/* Address */}
                   <div className="md:col-span-2">
                     <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                      Address
+                      Street Address
                     </label>
                     {editing ? (
                       <textarea
                         value={formData.address}
                         onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                        rows={3}
+                        rows={2}
                         className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Enter your address"
+                        placeholder="House No., Building Name, Street Name"
                       />
                     ) : (
                       <div className="flex items-start space-x-2 px-3 py-2 bg-slate-50 rounded-lg">
                         <MapPin className="w-4 h-4 text-slate-400 mt-0.5" />
                         <span className="text-sm text-slate-900">{user.address || 'Not provided'}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* City */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      City
+                    </label>
+                    {editing ? (
+                      <input
+                        type="text"
+                        value={formData.city}
+                        onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter city"
+                      />
+                    ) : (
+                      <div className="flex items-center space-x-2 px-3 py-2 bg-slate-50 rounded-lg">
+                        <MapPin className="w-4 h-4 text-slate-400" />
+                        <span className="text-sm text-slate-900">{user.city || 'Not provided'}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* State */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      State
+                    </label>
+                    {editing ? (
+                      <input
+                        type="text"
+                        value={formData.state}
+                        onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter state"
+                      />
+                    ) : (
+                      <div className="flex items-center space-x-2 px-3 py-2 bg-slate-50 rounded-lg">
+                        <MapPin className="w-4 h-4 text-slate-400" />
+                        <span className="text-sm text-slate-900">{user.state || 'Not provided'}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Pincode */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Pincode
+                    </label>
+                    {editing ? (
+                      <input
+                        type="text"
+                        value={formData.pincode}
+                        onChange={(e) => setFormData({ ...formData, pincode: e.target.value })}
+                        className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Enter pincode"
+                        maxLength={6}
+                      />
+                    ) : (
+                      <div className="flex items-center space-x-2 px-3 py-2 bg-slate-50 rounded-lg">
+                        <MapPin className="w-4 h-4 text-slate-400" />
+                        <span className="text-sm text-slate-900">{user.pincode || 'Not provided'}</span>
                       </div>
                     )}
                   </div>
@@ -253,6 +321,9 @@ export default function ProfilePage() {
                           email: user.email || '',
                           phone: user.phone || '',
                           address: user.address || '',
+                          city: user.city || '',
+                          state: user.state || '',
+                          pincode: user.pincode || '',
                         });
                       }}
                       className="px-6 py-2 text-sm border border-slate-300 text-slate-700 rounded-lg font-semibold hover:bg-slate-50 transition-colors flex items-center space-x-2"

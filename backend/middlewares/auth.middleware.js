@@ -24,3 +24,27 @@ export const authenticate = async (req, res, next) => {
     });
   }
 };
+
+/**
+ * Optional authentication - allows both authenticated and guest users
+ * Sets req.user if token is valid, otherwise continues without user
+ */
+export const optionalAuth = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+
+    if (token) {
+      try {
+        const decoded = verifyToken(token);
+        req.user = { id: decoded.userId, email: decoded.email };
+      } catch (error) {
+        // Invalid token, continue as guest
+        req.user = null;
+      }
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};

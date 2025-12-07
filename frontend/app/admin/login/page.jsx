@@ -7,7 +7,7 @@ import { LogIn, Mail, Lock, Loader2, ShieldCheck, Store, TrendingUp, Users } fro
 export default function AdminLogin() {
   const [credentials, setCredentials] = useState({
     email: 'admin@example.com',
-    password: 'admin123',
+    password: '12345678',
   });
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -120,7 +120,7 @@ export default function AdminLogin() {
                     <span className="font-medium">Email:</span> admin@example.com
                   </p>
                   <p className="text-sm text-slate-600">
-                    <span className="font-medium">Password:</span> admin123
+                    <span className="font-medium">Password:</span> 12345678
                   </p>
                 </div>
               </div>

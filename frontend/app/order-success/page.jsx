@@ -1,13 +1,89 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { CheckCircle, Package, Home, ShoppingBag, Sparkles } from 'lucide-react';
 import Header from '@/components/user/Header';
 import Footer from '@/components/user/Footer';
+import { orderAPI } from '@/lib/userApi';
+import toast from 'react-hot-toast';
 
 export default function OrderSuccessPage() {
-  const [orderNumber] = useState(() => 'ORD' + Date.now().toString().slice(-8));
+  const searchParams = useSearchParams();
+  const orderNumber = searchParams.get('order');
+  const [orderData, setOrderData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (orderNumber) {
+      fetchOrderDetails();
+    }
+  }, [orderNumber]);
+
+  const fetchOrderDetails = async () => {
+    try {
+      const response = await orderAPI.getOrderByNumber(orderNumber);
+      if (response.success) {
+        setOrderData(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching order:', error);
+      toast.error('Failed to load order details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      pending: 'text-yellow-600',
+      processing: 'text-blue-600',
+      shipped: 'text-purple-600',
+      delivered: 'text-green-600',
+      cancelled: 'text-red-600'
+    };
+    return colors[status] || 'text-slate-600';
+  };
+
+  const getStatusLabel = (status) => {
+    const labels = {
+      pending: 'Pending',
+      processing: 'Processing',
+      shipped: 'Shipped',
+      delivered: 'Delivered',
+      cancelled: 'Cancelled'
+    };
+    return labels[status] || status;
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <Header />
+        <div className="container mx-auto px-4 py-20 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+          <p className="text-slate-600">Loading order details...</p>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!orderData) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <Header />
+        <div className="container mx-auto px-4 py-20 text-center">
+          <h2 className="text-2xl font-bold text-slate-900 mb-4">Order not found</h2>
+          <Link href="/" className="text-blue-600 hover:underline">
+            Go to Home
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -47,12 +123,12 @@ export default function OrderSuccessPage() {
             <div className="flex items-center justify-between pb-6 border-b border-slate-200 mb-6">
               <div>
                 <p className="text-sm text-slate-600 mb-1">Order Number</p>
-                <p className="text-2xl font-bold text-slate-900">#{orderNumber}</p>
+                <p className="text-2xl font-bold text-slate-900">#{orderData.order_number}</p>
               </div>
               <div className="text-right">
                 <p className="text-sm text-slate-600 mb-1">Order Date</p>
                 <p className="text-lg font-semibold text-slate-900">
-                  {new Date().toLocaleDateString('en-IN', {
+                  {new Date(orderData.created_at).toLocaleDateString('en-IN', {
                     day: 'numeric',
                     month: 'short',
                     year: 'numeric'
@@ -95,17 +171,31 @@ export default function OrderSuccessPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div className="bg-slate-50 rounded-lg p-4">
                 <p className="text-xs font-semibold text-slate-600 mb-2">PAYMENT METHOD</p>
-                <p className="text-sm font-bold text-slate-900">Cash on Delivery</p>
+                <p className="text-sm font-bold text-slate-900 capitalize">
+                  {orderData.payment_method === 'cod' ? 'Cash on Delivery' : orderData.payment_method}
+                </p>
               </div>
               <div className="bg-slate-50 rounded-lg p-4">
-                <p className="text-xs font-semibold text-slate-600 mb-2">DELIVERY STATUS</p>
-                <p className="text-sm font-bold text-emerald-600">Processing</p>
+                <p className="text-xs font-semibold text-slate-600 mb-2">ORDER STATUS</p>
+                <p className={`text-sm font-bold capitalize ${getStatusColor(orderData.status)}`}>
+                  {getStatusLabel(orderData.status)}
+                </p>
+              </div>
+            </div>
+
+            {/* Order Total */}
+            <div className="bg-slate-50 rounded-lg p-4 mb-6">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-semibold text-slate-600">Total Amount</span>
+                <span className="text-2xl font-bold text-slate-900">
+                  ₹{orderData.total_amount.toLocaleString('en-IN')}
+                </span>
               </div>
             </div>
 
             {/* Track Order Button */}
             <Link
-              href="/account/orders"
+              href={`/track-order?order=${orderData.order_number}`}
               className="block w-full py-3 bg-blue-600 text-white text-center rounded-lg font-semibold hover:bg-blue-700 transition-colors"
             >
               Track Your Order

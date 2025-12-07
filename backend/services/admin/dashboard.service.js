@@ -18,7 +18,8 @@ export class DashboardService {
         .select('*', { count: 'exact', head: true })
         .eq('status', 'pending');
 
-      // Get revenue data
+      // Get revenue data from paid orders
+      // Note: COD orders automatically get payment_status='paid' when delivered
       const { data: revenueData } = await supabase
         .from('orders')
         .select('total_amount, created_at')
@@ -27,8 +28,7 @@ export class DashboardService {
       // Get total customers
       const { count: totalCustomers } = await supabase
         .from('users')
-        .select('*', { count: 'exact', head: true })
-        .eq('is_active', true);
+        .select('*', { count: 'exact', head: true });
 
       // Get total products
       const { count: totalProducts } = await supabase
@@ -146,6 +146,7 @@ export class DashboardService {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
+    // Get paid orders (includes delivered COD orders)
     const { data: orders, error } = await supabase
       .from('orders')
       .select('created_at, total_amount')

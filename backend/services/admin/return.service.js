@@ -11,11 +11,24 @@ export class ReturnService {
     const offset = getPaginationOffset(page, limit);
 
     let query = supabase
-      .from('returns')
-      .select('*', { count: 'exact' });
+      .from('return_requests')
+      .select(`
+        *,
+        order:orders!return_requests_order_id_fkey (
+          order_number,
+          total_amount,
+          customer_email
+        ),
+        user:users!return_requests_user_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `, { count: 'exact' });
 
     if (status) query = query.eq('status', status);
-    if (search) query = query.ilike('return_number', `%${search}%`);
+    if (search) query = query.ilike('order_number', `%${search}%`);
 
     query = query
       .order('created_at', { ascending: false })
@@ -23,7 +36,10 @@ export class ReturnService {
 
     const { data: returns, error, count } = await query;
 
-    if (error) throw new AppError(error.message, 500);
+    if (error) {
+      console.error('❌ Get all returns error:', error);
+      throw new AppError(error.message, 500);
+    }
 
     return {
       returns: returns || [],
@@ -36,8 +52,21 @@ export class ReturnService {
    */
   static async getReturnById(id) {
     const { data: returnReq, error } = await supabase
-      .from('returns')
-      .select('*')
+      .from('return_requests')
+      .select(`
+        *,
+        order:orders!return_requests_order_id_fkey (
+          order_number,
+          total_amount,
+          customer_email
+        ),
+        user:users!return_requests_user_id_fkey (
+          id,
+          first_name,
+          last_name,
+          email
+        )
+      `)
       .eq('id', id)
       .single();
 
@@ -64,7 +93,7 @@ export class ReturnService {
     };
 
     if (status !== 'pending') {
-      updateData.approved_by = adminId;
+      updateData.processed_by = adminId;
       updateData.processed_at = new Date().toISOString();
     }
 
@@ -73,7 +102,7 @@ export class ReturnService {
     }
 
     const { data: returnReq, error } = await supabase
-      .from('returns')
+      .from('return_requests')
       .update(updateData)
       .eq('id', returnId)
       .select()
@@ -100,7 +129,7 @@ export class ReturnService {
     const return_number = `RET-${Math.floor(100000 + Math.random() * 900000)}`;
 
     const { data: returnReq, error } = await supabase
-      .from('returns')
+      .from('return_requests')
       .insert({
         return_number,
         order_id,
@@ -124,7 +153,7 @@ export class ReturnService {
    */
   static async getReturnStats() {
     const { data: returns, error } = await supabase
-      .from('returns')
+      .from('return_requests')
       .select('status, refund_amount');
 
     if (error) throw new AppError(error.message, 500);
