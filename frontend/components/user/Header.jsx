@@ -31,6 +31,7 @@ export default function Header({ showNavigation = false }) {
   const [wishlistCount, setWishlistCount] = useState(0);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
+  const [isScrolled, setIsScrolled] = useState(false);
 
   const [categories, setCategories] = useState([]);
 
@@ -55,10 +56,18 @@ export default function Header({ showNavigation = false }) {
     window.addEventListener('cartUpdated', updateCounts);
     window.addEventListener('wishlistUpdated', updateCounts);
 
+    // Scroll detection for navigation
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+
+    window.addEventListener('scroll', handleScroll);
+
     return () => {
       window.removeEventListener('storage', updateCounts);
       window.removeEventListener('cartUpdated', updateCounts);
       window.removeEventListener('wishlistUpdated', updateCounts);
+      window.removeEventListener('scroll', handleScroll);
     };
   }, []);
 
@@ -223,13 +232,15 @@ export default function Header({ showNavigation = false }) {
       <div className="container mx-auto px-4 py-4">
         <div className="flex items-center justify-between gap-4">
           {/* Logo */}
-          <Link href="/" className="flex items-center space-x-2">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <ShoppingCart className="w-6 h-6 text-white" />
-            </div>
+          <Link href="/" className="flex items-center space-x-3">
+            <img
+              src="/SSE Logo Icon Without BG.png"
+              alt="Sarv Sampan Enterprises"
+              className="w-14 h-14 object-contain"
+            />
             <div className="hidden md:block">
-              <h1 className="text-xl font-bold text-slate-900">ShopHub</h1>
-              <p className="text-xs text-slate-500">Your Shopping Destination</p>
+              <h1 className="text-xl font-bold text-slate-900">Sarv Sampan</h1>
+              <p className="text-xs text-slate-500">Your Trusted Shopping Partner</p>
             </div>
           </Link>
 
@@ -539,7 +550,9 @@ export default function Header({ showNavigation = false }) {
 
       {/* Navigation */}
       {showNavigation && (
-        <nav className="bg-slate-50 border-t border-slate-200 hidden md:block">
+        <nav className={`bg-slate-50 border-t border-slate-200 hidden md:block transition-all duration-300 ease-in-out overflow-hidden ${
+          isScrolled ? 'max-h-0 opacity-0' : 'max-h-20 opacity-100'
+        }`}>
           <div className="container mx-auto px-4">
             <div className="flex items-center space-x-1 py-2">
               <Link
@@ -570,7 +583,9 @@ export default function Header({ showNavigation = false }) {
 
       {/* Mobile Menu */}
       {showNavigation && mobileMenuOpen && (
-        <div className="md:hidden bg-white border-t border-slate-200">
+        <div className={`md:hidden bg-white border-t border-slate-200 transition-all duration-300 ease-in-out overflow-hidden ${
+          isScrolled ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
+        }`}>
           <div className="container mx-auto px-4 py-4 space-y-2">
             <Link
               href="/products"

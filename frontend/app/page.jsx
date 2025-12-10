@@ -192,10 +192,10 @@ export default function HomePage() {
           <div className="container mx-auto px-4 py-16 md:py-24">
             <div className="max-w-2xl">
               <h1 className="text-4xl md:text-6xl font-bold mb-4">
-                Welcome to ShopHub
+                Welcome to Sarv Sampan Enterprises
               </h1>
               <p className="text-xl md:text-2xl mb-8 text-blue-100">
-                Discover amazing products at unbeatable prices
+                Your trusted partner for quality products at the best prices
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Link

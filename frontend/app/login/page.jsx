@@ -46,6 +46,12 @@ export default function Login() {
     }
   };
 
+  const handleGoogleSignIn = () => {
+    // Direct redirect to backend Google auth route
+    const backendUrl = process.env.NEXT_PUBLIC_USER_API_URL || 'http://localhost:5000/api/user';
+    window.location.href = `${backendUrl}/auth/google`;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -148,7 +154,9 @@ export default function Login() {
           <div className="px-6 pb-4">
             <button
               type="button"
-              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path

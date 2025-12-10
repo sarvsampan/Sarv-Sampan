@@ -10,6 +10,7 @@ import wishlistRoutes from './wishlist.routes.js';
 import reviewRoutes from './review.routes.js';
 import returnRoutes from './return.routes.js';
 import replacementRoutes from './replacement.routes.js';
+import paymentRoutes from './payment.routes.js';
 
 const router = express.Router();
 
@@ -25,5 +26,6 @@ router.use('/wishlist', wishlistRoutes);
 router.use('/reviews', reviewRoutes);
 router.use('/returns', returnRoutes);
 router.use('/replacements', replacementRoutes);
+router.use('/payments', paymentRoutes);
 
 export default router;

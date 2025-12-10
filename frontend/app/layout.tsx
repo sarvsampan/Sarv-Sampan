@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ecommerce Admin Panel",
-  description: "Admin panel for ecommerce management",
+  title: "Sarv Sampan Enterprises - Your Trusted Shopping Partner",
+  description: "Quality products at affordable prices - Shop with confidence at Sarv Sampan Enterprises",
 };
 
 export default function RootLayout({

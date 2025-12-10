@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import passport from './config/passport.js';
 import { config } from './config/env.js';
 import adminRoutes from './routes/admin/index.js';
 import userRoutes from './routes/user/index.js';
@@ -40,6 +41,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Initialize Passport for Google OAuth (stateless - no session)
+app.use(passport.initialize());
+
 // Rate limiting - prevent abuse
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -63,6 +67,8 @@ app.use(limiter);
 // Apply stricter rate limiting to auth routes
 app.use('/api/user/auth/login', authLimiter);
 app.use('/api/user/auth/signup', authLimiter);
+app.use('/api/user/auth/google', authLimiter);
+app.use('/api/user/auth/google/callback', authLimiter);
 app.use('/api/admin/auth/login', authLimiter);
 
 // Health check

@@ -44,12 +44,14 @@ export default function Sidebar() {
       {/* Header */}
       <div className="h-16 px-5 flex items-center border-b border-slate-800">
         <div className="flex items-center space-x-3">
-          <div className="w-9 h-9 bg-blue-600 rounded-xl flex items-center justify-center">
-            <Store className="w-5 h-5 text-white" />
-          </div>
+          <img
+            src="/SSE Logo Icon Without BG.png"
+            alt="SSE"
+            className="w-9 h-9 object-contain"
+          />
           <div>
-            <h1 className="text-sm font-bold text-white">Admin Panel</h1>
-            <p className="text-xs text-slate-400">E-Commerce</p>
+            <h1 className="text-sm font-bold text-white">SSE Admin</h1>
+            <p className="text-xs text-slate-400">Sarv Sampan Enterprises</p>
           </div>
         </div>
       </div>

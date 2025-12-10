@@ -60,7 +60,7 @@ export class UserOrderController {
           order_number: orderNumber,
           status: 'pending',
           payment_method,
-          payment_status: payment_method === 'cod' ? 'pending' : 'pending',
+          payment_status: payment_method === 'cod' ? 'pending' : (payment_method === 'online' || payment_method === 'razorpay' ? 'pending' : 'pending'),
           customer_email: shipping_address.email,
           customer_phone: shipping_address.phone,
           subtotal: parseFloat(subtotal),

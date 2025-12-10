@@ -136,3 +136,10 @@ export const replacementAPI = {
   getReplacementRequestById: (id) => userApi.get(`/replacements/${id}`),
   deleteReplacementRequest: (id) => userApi.delete(`/replacements/${id}`),
 };
+
+// Payment APIs
+export const paymentAPI = {
+  createPaymentOrder: (orderData) => userApi.post('/payments/create-order', orderData),
+  verifyPayment: (paymentData) => userApi.post('/payments/verify', paymentData),
+  initiateRefund: (refundData) => userApi.post('/payments/refund', refundData),
+};

@@ -20,7 +20,8 @@ import {
 import Header from '@/components/user/Header';
 import Footer from '@/components/user/Footer';
 import toast from 'react-hot-toast';
-import { orderAPI, couponAPI, cartAPI } from '@/lib/userApi';
+import { orderAPI, couponAPI, cartAPI, paymentAPI } from '@/lib/userApi';
+import Script from 'next/script';
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -52,6 +53,7 @@ export default function CheckoutPage() {
 
   const [sameAsShipping, setSameAsShipping] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState('cod');
+  const [razorpayLoaded, setRazorpayLoaded] = useState(false);
 
   // Coupon states
   const [couponCode, setCouponCode] = useState('');
@@ -206,6 +208,88 @@ export default function CheckoutPage() {
     return true;
   };
 
+  const handleRazorpayPayment = async (createdOrders) => {
+    try {
+      // Get the first order for payment (all orders have same total in this implementation)
+      const firstOrder = createdOrders[0];
+
+      // Create Razorpay order
+      const paymentOrderResponse = await paymentAPI.createPaymentOrder({
+        amount: total,
+        orderId: firstOrder.order_id,
+        orderNumber: firstOrder.order_number,
+      });
+
+      const { razorpay_order_id, key_id } = paymentOrderResponse.data;
+
+      // Initialize Razorpay checkout
+      const options = {
+        key: key_id,
+        amount: total * 100, // Amount in paise
+        currency: 'INR',
+        name: 'Your Store Name',
+        description: `Order #${firstOrder.order_number}`,
+        order_id: razorpay_order_id,
+        prefill: {
+          name: shippingInfo.fullName,
+          email: shippingInfo.email,
+          contact: shippingInfo.phone,
+        },
+        theme: {
+          color: '#2563eb',
+        },
+        handler: async function (response) {
+          // Payment successful, verify it
+          try {
+            await paymentAPI.verifyPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              order_id: firstOrder.order_id,
+            });
+
+            // Clear cart
+            try {
+              await cartAPI.clearCart();
+              window.dispatchEvent(new CustomEvent('cartUpdated'));
+            } catch (error) {
+              console.error('Error clearing cart:', error);
+            }
+
+            toast.success('Payment successful!');
+            router.push(`/order-success?order=${firstOrder.order_number}`);
+          } catch (error) {
+            setProcessing(false);
+            router.push(`/payment-failed?order=${firstOrder.order_number}&reason=payment_failed`);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setProcessing(false);
+            router.push(`/payment-failed?order=${firstOrder.order_number}&reason=user_cancelled`);
+          },
+          onhidden: function() {
+            setProcessing(false);
+          }
+        },
+      };
+
+      const razorpay = new window.Razorpay(options);
+
+      // Handle payment failure
+      razorpay.on('payment.failed', function (response) {
+        setProcessing(false);
+        const errorReason = response.error?.reason || 'payment_failed';
+        router.push(`/payment-failed?order=${firstOrder.order_number}&reason=${errorReason}`);
+      });
+
+      razorpay.open();
+    } catch (error) {
+      setProcessing(false);
+      router.push(`/payment-failed?reason=network_error`);
+    }
+  };
+
   const handlePlaceOrder = async () => {
     // Check if user is logged in
     const userToken = localStorage.getItem('userToken');
@@ -261,17 +345,22 @@ export default function CheckoutPage() {
         createdOrders.push(response.data);
       }
 
-      // Clear cart
-      try {
-        await cartAPI.clearCart();
-        window.dispatchEvent(new CustomEvent('cartUpdated'));
-      } catch (error) {
-        console.error('Error clearing cart:', error);
-      }
+      // Handle payment based on method
+      if (paymentMethod === 'online') {
+        // For online payment, initiate Razorpay
+        await handleRazorpayPayment(createdOrders);
+      } else {
+        // For COD, clear cart and redirect
+        try {
+          await cartAPI.clearCart();
+          window.dispatchEvent(new CustomEvent('cartUpdated'));
+        } catch (error) {
+          console.error('Error clearing cart:', error);
+        }
 
-      toast.success(`${createdOrders.length} orders placed successfully!`);
-      // Redirect to the first order's success page
-      router.push(`/order-success?order=${createdOrders[0].order_number}`);
+        toast.success(`${createdOrders.length} orders placed successfully!`);
+        router.push(`/order-success?order=${createdOrders[0].order_number}`);
+      }
     } catch (error) {
       console.error('Order creation error:', error);
 
@@ -322,8 +411,17 @@ export default function CheckoutPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Header />
+    <>
+      <Script
+        src="https://checkout.razorpay.com/v1/checkout.js"
+        onLoad={() => setRazorpayLoaded(true)}
+        onError={() => {
+          console.error('Failed to load Razorpay script');
+          toast.error('Payment gateway failed to load. Please refresh the page.');
+        }}
+      />
+      <div className="min-h-screen bg-slate-50">
+        <Header />
 
       <main className="container mx-auto px-4 py-8">
         {/* Header */}
@@ -651,17 +749,18 @@ export default function CheckoutPage() {
                   </div>
                 </label>
 
-                <label className="flex items-center p-4 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-blue-500 transition-colors opacity-50">
+                <label className="flex items-center p-4 border-2 border-slate-200 rounded-lg cursor-pointer hover:border-blue-500 transition-colors">
                   <input
                     type="radio"
                     name="payment"
                     value="online"
-                    disabled
+                    checked={paymentMethod === 'online'}
+                    onChange={(e) => setPaymentMethod(e.target.value)}
                     className="w-4 h-4 text-blue-600"
                   />
                   <div className="ml-3">
                     <p className="font-semibold text-slate-900">Online Payment</p>
-                    <p className="text-sm text-slate-600">UPI / Card / Net Banking (Coming Soon)</p>
+                    <p className="text-sm text-slate-600">UPI / Card / Net Banking / Wallet</p>
                   </div>
                 </label>
               </div>
@@ -811,7 +910,8 @@ export default function CheckoutPage() {
         </div>
       </main>
 
-      <Footer />
-    </div>
+        <Footer />
+      </div>
+    </>
   );
 }

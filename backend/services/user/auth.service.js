@@ -34,11 +34,10 @@ export class UserAuthService {
         first_name,
         last_name,
         phone,
-        role: 'user',
         status: 'active',
         email_verified: false,
       })
-      .select('id, email, first_name, last_name, phone, role, created_at')
+      .select('id, email, first_name, last_name, phone, created_at')
       .single();
 
     if (error) throw new AppError(error.message, 500);
@@ -197,5 +196,102 @@ export class UserAuthService {
     if (updateError) throw new AppError(updateError.message, 500);
 
     return true;
+  }
+
+  /**
+   * Google OAuth Authentication
+   */
+  static async googleAuth(googleUserData) {
+    const { googleId, email, firstName, lastName, avatarUrl, emailVerified } = googleUserData;
+
+    // Validate required fields
+    if (!googleId || !email) {
+      throw new AppError('Invalid Google user data', 400);
+    }
+
+    // Check if user exists by Google ID
+    let { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('google_id', googleId)
+      .single();
+
+    let isNewUser = false;
+
+    // If not found by Google ID, check by email
+    if (!user) {
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('*')
+        .eq('email', email)
+        .single();
+
+      if (existingUser) {
+        // User exists with email/password - link Google account
+        const { data: updatedUser, error: updateError } = await supabase
+          .from('users')
+          .update({
+            google_id: googleId,
+            oauth_provider: 'google',
+            avatar_url: avatarUrl,
+            email_verified: true,
+            email_verified_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingUser.id)
+          .select('*')
+          .single();
+
+        if (updateError) throw new AppError(updateError.message, 500);
+        user = updatedUser;
+      } else {
+        // Create new user with Google account
+        const { data: newUser, error: createError } = await supabase
+          .from('users')
+          .insert({
+            email,
+            google_id: googleId,
+            oauth_provider: 'google',
+            first_name: firstName,
+            last_name: lastName,
+            avatar_url: avatarUrl,
+            email_verified: true,
+            email_verified_at: new Date().toISOString(),
+            status: 'active',
+          })
+          .select('*')
+          .single();
+
+        if (createError) throw new AppError(createError.message, 500);
+        user = newUser;
+        isNewUser = true;
+      }
+    }
+
+    // Check if user is active
+    if (user.status !== 'active') {
+      throw new AppError('Account is inactive. Please contact support.', 403);
+    }
+
+    // Update last activity
+    await supabase
+      .from('users')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', user.id);
+
+    // Generate JWT token
+    const token = generateToken({
+      userId: user.id,
+      email: user.email,
+    });
+
+    // Return user data (exclude password_hash)
+    const { password_hash: _, ...userData } = user;
+
+    return {
+      user: userData,
+      token,
+      isNewUser,
+    };
   }
 }
