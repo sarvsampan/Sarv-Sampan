@@ -404,7 +404,9 @@ export default function Header({ showNavigation = false }) {
                   {/* User Info */}
                   <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 rounded-t-xl">
                     <p className="text-sm font-semibold text-slate-900 truncate">
-                      {user?.name || 'User'}
+                      {user?.first_name
+                        ? `${user.first_name} ${user.last_name || ''}`.trim()
+                        : user?.name || 'User'}
                     </p>
                     <p className="text-xs text-slate-500 truncate">
                       {user?.email || ''}
